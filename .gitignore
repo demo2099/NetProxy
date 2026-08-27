@@ -1,0 +1,23 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+app/build
+build/
+
+# signing (never commit)
+interstellar.jks
+keystore.properties
+signing.properties
+
+# 112MB sing-box core — rebuild via `make lib_android` (see README)
+app/libs/libbox.aar
+
+# agent workspace / kotlin session files
+.zcode/
+.kotlin/

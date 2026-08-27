@@ -1,0 +1,477 @@
+package com.interstellar.proxy.ui.pages
+
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.interstellar.proxy.data.Settings
+import com.interstellar.proxy.data.SubscriptionRepository
+import com.interstellar.proxy.data.UpdateWorker
+import com.interstellar.proxy.ui.AppViewModel
+import com.interstellar.proxy.ui.components.IosCard
+import com.interstellar.proxy.ui.components.IosSectionFooter
+import com.interstellar.proxy.ui.components.IosSectionLabel
+import com.interstellar.proxy.ui.components.IosToggleRow
+import com.interstellar.proxy.ui.components.SegmentedControl
+import com.interstellar.proxy.ui.components.iosPressable
+import com.interstellar.proxy.ui.components.pressableClick
+import com.interstellar.proxy.ui.theme.LocalInterstellarColors
+import com.interstellar.proxy.ui.theme.Motion
+import io.nekohasekai.libbox.Libbox
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SubscriptionsPage(viewModel: AppViewModel) {
+    val colors = LocalInterstellarColors.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val subscriptions by viewModel.subscriptions.collectAsState()
+    val refreshing by viewModel.refreshing.collectAsState()
+    val activeId by viewModel.activeSubscriptionId.collectAsState()
+    val mixEnabled by viewModel.mixEnabled.collectAsState()
+    val mixIds by viewModel.mixSubscriptionIds.collectAsState()
+    var showAdd by remember { mutableStateOf(false) }
+    var editTarget by remember { mutableStateOf<SubscriptionRepository.Subscription?>(null) }
+    var deleteTarget by remember { mutableStateOf<SubscriptionRepository.Subscription?>(null) }
+    var autoUpdate by remember { mutableStateOf(Settings.autoUpdateEnabled) }
+    var interval by remember { mutableStateOf(Settings.autoUpdateIntervalHours) }
+
+    PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = { viewModel.refreshAll() },
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Spacer(Modifier.weight(1f))
+                Text(
+                    "添加",
+                    color = colors.accent,
+                    fontSize = 17.sp,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .iosPressable { showAdd = true }
+                        .padding(horizontal = 4.dp, vertical = 6.dp),
+                )
+            }
+
+            IosSectionLabel("合并订阅 (Mix)")
+            IosCard(modifier = Modifier.fillMaxWidth()) {
+                IosToggleRow(
+                    title = "合并多个订阅",
+                    subtitle = if (mixEnabled) {
+                        "已勾选 ${mixIds.size} / ${subscriptions.size} 个订阅"
+                    } else {
+                        null
+                    },
+                    checked = mixEnabled,
+                    onChange = { viewModel.setMixEnabled(it) },
+                )
+            }
+            IosSectionFooter("开启后节点池为所有勾选订阅的合集,节点页会标注来源;流量与到期仍按订阅独立显示。")
+
+            Spacer(Modifier.height(8.dp))
+            IosSectionLabel("自动更新")
+            IosCard(modifier = Modifier.fillMaxWidth()) {
+                Column {
+                    IosToggleRow(
+                        title = "自动更新",
+                        checked = autoUpdate,
+                        onChange = {
+                            autoUpdate = it
+                            Settings.autoUpdateEnabled = it
+                            UpdateWorker.reschedule(context)
+                        },
+                    )
+                    if (autoUpdate) {
+                        Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp)) {
+                            SegmentedControl(
+                                items = listOf("每小时", "6 小时", "12 小时", "每天"),
+                                selected = listOf(1, 6, 12, 24).indexOf(interval).coerceAtLeast(1),
+                                onSelect = { index ->
+                                    interval = listOf(1, 6, 12, 24)[index]
+                                    Settings.autoUpdateIntervalHours = interval
+                                    UpdateWorker.reschedule(context)
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                }
+            }
+            IosSectionFooter("在后台定时刷新订阅,内核运行时自动热重载生效。")
+
+            Spacer(Modifier.height(8.dp))
+            IosSectionLabel("订阅")
+
+            if (subscriptions.isEmpty()) {
+                EmptyHint(text = "点右上角添加订阅")
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    subscriptions.forEach { sub ->
+                        IosCard(modifier = Modifier.fillMaxWidth()) {
+                            SubscriptionCard(
+                                sub = sub,
+                                active = !mixEnabled && sub.id == activeId,
+                                checked = if (mixEnabled) sub.id in mixIds else null,
+                                onClick = {
+                                    if (mixEnabled) {
+                                        viewModel.toggleMixSubscription(sub.id)
+                                    } else {
+                                        viewModel.activateSubscription(sub.id)
+                                    }
+                                },
+                                onRefresh = { viewModel.refreshSubscription(sub.id, fromPull = false) },
+                                onEdit = { editTarget = sub },
+                                onDelete = { deleteTarget = sub },
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(20.dp))
+        }
+    }
+
+    editTarget?.let { target ->
+        EditSubscriptionDialog(
+            subscription = target,
+            onSave = { name, url ->
+                viewModel.updateSubscription(target.id, name, url)
+                editTarget = null
+            },
+            onDismiss = { editTarget = null },
+        )
+    }
+
+    deleteTarget?.let { target ->
+        androidx.compose.ui.window.Dialog(onDismissRequest = { deleteTarget = null }) {
+            Column(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(colors.panelSolid)
+                    .padding(18.dp),
+            ) {
+                Text("删除订阅", color = colors.text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "将删除「${target.name}」及其节点,无法恢复。",
+                    color = colors.textSecondary,
+                    fontSize = 13.sp,
+                )
+                Spacer(Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ActionChip(text = "取消") { deleteTarget = null }
+                    Spacer(Modifier.width(10.dp))
+                    ActionChip(text = "删除", danger = true) {
+                        viewModel.removeSubscription(target.id)
+                        deleteTarget = null
+                    }
+                }
+            }
+        }
+    }
+
+    if (showAdd) {
+        AddSubscriptionDialog(
+            onDismiss = { showAdd = false },
+            onAddUrl = { name, url ->
+                viewModel.addSubscriptionFromUrl(name, url)
+                showAdd = false
+            },
+            onAddText = { name, text ->
+                viewModel.addSubscriptionFromText(name, text)
+                showAdd = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun SubscriptionCard(
+    sub: SubscriptionRepository.Subscription,
+    active: Boolean,
+    /** Mix mode: checked state of this subscription; null = activate mode. */
+    checked: Boolean?,
+    onClick: () -> Unit,
+    onRefresh: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val colors = LocalInterstellarColors.current
+    val used = sub.uploadBytes + sub.downloadBytes
+    val ratio = if (sub.totalBytes > 0) {
+        (used.toFloat() / sub.totalBytes).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+    val expireText = if (sub.expireSeconds > 0) {
+        val days = ((sub.expireSeconds * 1000 - System.currentTimeMillis()) / 86_400_000L).toInt()
+        when {
+            days < 0 -> "已过期"
+            days == 0 -> "今天到期"
+            else -> "$days 天后到期"
+        }
+    } else {
+        null
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .iosPressable { onClick() }
+            .padding(horizontal = 18.dp, vertical = 16.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                sub.name,
+                color = colors.text,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            when {
+                checked != null -> Icon(
+                    imageVector = if (checked) {
+                        Icons.Filled.CheckCircle
+                    } else {
+                        Icons.Outlined.RadioButtonUnchecked
+                    },
+                    contentDescription = if (checked) "已加入" else "未加入",
+                    tint = if (checked) colors.primary else colors.border,
+                    modifier = Modifier.size(22.dp),
+                )
+
+                active -> Text("使用中", color = colors.primary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                if (sub.totalBytes > 0) {
+                    "${Libbox.formatBytes(used)} / ${Libbox.formatBytes(sub.totalBytes)}"
+                } else {
+                    expireText ?: " "
+                },
+                color = colors.textTertiary,
+                fontSize = 13.sp,
+                modifier = Modifier.weight(1f),
+            )
+            Text("${sub.nodes.size} 个节点", color = colors.textSecondary, fontSize = 13.sp)
+        }
+        if (sub.totalBytes > 0 && expireText != null) {
+            Spacer(Modifier.height(4.dp))
+            Text(expireText, color = colors.textTertiary, fontSize = 13.sp)
+        }
+        if (sub.totalBytes > 0) {
+            Spacer(Modifier.height(12.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(colors.bgDeep),
+            ) {
+                val animated by animateFloatAsState(
+                    targetValue = ratio,
+                    animationSpec = Motion.smooth(),
+                    label = "traffic",
+                )
+                val barColor = when {
+                    ratio >= 0.9f -> colors.danger
+                    ratio >= 0.7f -> colors.warning
+                    else -> colors.primary
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(animated)
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(barColor),
+                )
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(20.dp, Alignment.End),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "编辑",
+                color = colors.accent,
+                fontSize = 15.sp,
+                modifier = Modifier.iosPressable { onEdit() },
+            )
+            if (sub.url != null) {
+                var copied by remember { mutableStateOf(false) }
+                LaunchedEffect(copied) {
+                    if (copied) {
+                        kotlinx.coroutines.delay(1500)
+                        copied = false
+                    }
+                }
+                Text(
+                    if (copied) "已复制" else "复制",
+                    color = colors.accent,
+                    fontSize = 15.sp,
+                    modifier = Modifier.iosPressable {
+                        runCatching {
+                            com.interstellar.proxy.InterstellarApplication.clipboard.setPrimaryClip(
+                                android.content.ClipData.newPlainText("subscription", sub.url),
+                            )
+                        }
+                        copied = true
+                    },
+                )
+                Text(
+                    "更新",
+                    color = colors.accent,
+                    fontSize = 15.sp,
+                    modifier = Modifier.iosPressable { onRefresh() },
+                )
+            }
+            Text(
+                "删除",
+                color = colors.danger,
+                fontSize = 15.sp,
+                modifier = Modifier.iosPressable { onDelete() },
+            )
+        }
+    }
+}
+
+@Composable
+fun ActionChip(text: String, primary: Boolean = false, danger: Boolean = false, onClick: () -> Unit) {
+    val colors = LocalInterstellarColors.current
+    val bg = when {
+        primary -> colors.primaryMuted
+        danger -> colors.dangerMuted
+        else -> colors.bgDeep
+    }
+    val fg = when {
+        primary -> colors.primary
+        danger -> colors.danger
+        else -> colors.textSecondary
+    }
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(bg)
+            .pressableClick { onClick() }
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    ) {
+        Text(text, color = fg, fontSize = 12.sp)
+    }
+}
+
+@Composable
+private fun EditSubscriptionDialog(
+    subscription: SubscriptionRepository.Subscription,
+    onSave: (name: String, url: String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val colors = LocalInterstellarColors.current
+    var name by remember { mutableStateOf(subscription.name) }
+    var url by remember { mutableStateOf(subscription.url ?: "") }
+
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .clip(RoundedCornerShape(16.dp))
+                .background(colors.panelSolid)
+                .padding(18.dp),
+        ) {
+            Text("编辑订阅", color = colors.text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(14.dp))
+            androidx.compose.material3.OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("名称", color = colors.textTertiary, fontSize = 12.sp) },
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = colors.text,
+                    unfocusedTextColor = colors.text,
+                    focusedBorderColor = colors.primaryBorder,
+                    unfocusedBorderColor = colors.border,
+                    cursorColor = colors.primary,
+                ),
+            )
+            Spacer(Modifier.height(8.dp))
+            androidx.compose.material3.OutlinedTextField(
+                value = url,
+                onValueChange = { url = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("订阅链接(可选)", color = colors.textTertiary, fontSize = 12.sp) },
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = colors.text,
+                    unfocusedTextColor = colors.text,
+                    focusedBorderColor = colors.primaryBorder,
+                    unfocusedBorderColor = colors.border,
+                    cursorColor = colors.primary,
+                ),
+            )
+            Spacer(Modifier.height(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ActionChip(text = "取消") { onDismiss() }
+                Spacer(Modifier.width(10.dp))
+                ActionChip(text = "保存", primary = true) {
+                    onSave(name, url)
+                }
+            }
+        }
+    }
+}
