@@ -4,7 +4,7 @@
 
 # 星际穿越 · interstellar
 
-**穿越光年，只为回家。**
+**星河漫漫， 穿越光年。**
 
 Android 7.0+ · v0.2.0 · Kotlin + Jetpack Compose
 
