@@ -195,6 +195,7 @@ object SubscriptionRepository {
                 selectedNodeTag = selectedTag,
                 apiSecret = Settings.apiSecret,
                 customRules = CustomRulesStore.rules.toList(),
+                dnsOverrides = DnsOverridesStore.enabled(),
                 applyNodeFilterRules = Settings.splitRulesEnabled &&
                     Settings.outboundMode == ConfigBuilder.OutboundMode.RULE,
                 regionGroupsEnabled = regionGroups,

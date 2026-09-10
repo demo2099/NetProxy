@@ -17,6 +17,10 @@ enum class DomainMatchType {
 
 @Serializable
 enum class NodeFilterMode {
+    /** Matched domains bypass the proxy entirely (direct outbound). */
+    @SerialName("direct")
+    DIRECT,
+
     @SerialName("include")
     INCLUDE,
 

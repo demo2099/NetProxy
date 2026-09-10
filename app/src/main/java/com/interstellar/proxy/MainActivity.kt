@@ -217,6 +217,7 @@ fun AppRoot(
                                 SettingsSubPage.Logs -> LogsPage(logsViewModel)
                                 SettingsSubPage.Proxies -> ProxiesPage(appViewModel)
                                 SettingsSubPage.Rules -> com.interstellar.proxy.ui.pages.CustomRulesPage(appViewModel)
+                                SettingsSubPage.Dns -> com.interstellar.proxy.ui.pages.DnsOverridesPage(appViewModel)
                             }
                         }
                     } else {

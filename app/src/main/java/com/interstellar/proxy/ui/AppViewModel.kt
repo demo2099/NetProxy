@@ -12,10 +12,12 @@ import com.interstellar.proxy.constant.Action
 import com.interstellar.proxy.constant.Status
 import com.interstellar.proxy.data.ConfigStore
 import com.interstellar.proxy.data.CustomRulesStore
+import com.interstellar.proxy.data.DnsOverridesStore
 import com.interstellar.proxy.data.Settings
 import com.interstellar.proxy.data.SubscriptionRepository
 import com.interstellar.proxy.data.config.ConfigBuilder
 import com.interstellar.proxy.data.model.CustomRouteRule
+import com.interstellar.proxy.data.model.DnsOverrideEntry
 import com.interstellar.proxy.data.net.SubscriptionFetcher
 import com.interstellar.proxy.data.subscription.SubscriptionParser
 import io.nekohasekai.libbox.Libbox
@@ -124,6 +126,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _customRules = MutableStateFlow(CustomRulesStore.rules.toList())
     val customRules: StateFlow<List<CustomRouteRule>> = _customRules
+
+    private val _dnsOverrides = MutableStateFlow(DnsOverridesStore.entries.toList())
+    val dnsOverrides: StateFlow<List<DnsOverrideEntry>> = _dnsOverrides
 
     private val _splitRuleStatus = MutableStateFlow(computeSplitRuleStatus())
     val splitRuleStatus: StateFlow<SplitRuleStatus> = _splitRuleStatus
@@ -451,6 +456,24 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         CustomRulesStore.setEnabled(id, enabled)
         _customRules.value = CustomRulesStore.rules.toList()
         refreshSplitRuleStatus()
+        refreshProxyConfig()
+    }
+
+    fun upsertDnsOverride(entry: DnsOverrideEntry) {
+        DnsOverridesStore.upsert(entry)
+        _dnsOverrides.value = DnsOverridesStore.entries.toList()
+        refreshProxyConfig()
+    }
+
+    fun removeDnsOverride(id: String) {
+        DnsOverridesStore.remove(id)
+        _dnsOverrides.value = DnsOverridesStore.entries.toList()
+        refreshProxyConfig()
+    }
+
+    fun setDnsOverrideEnabled(id: String, enabled: Boolean) {
+        DnsOverridesStore.setEnabled(id, enabled)
+        _dnsOverrides.value = DnsOverridesStore.entries.toList()
         refreshProxyConfig()
     }
 

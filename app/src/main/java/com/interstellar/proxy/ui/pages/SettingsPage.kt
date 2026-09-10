@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AltRoute
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.BatteryFull
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Terminal
@@ -39,6 +40,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.interstellar.proxy.data.CustomRulesStore
+import com.interstellar.proxy.data.DnsOverridesStore
 import com.interstellar.proxy.data.Settings
 import com.interstellar.proxy.ui.components.IosCard
 import com.interstellar.proxy.ui.components.IosHairline
@@ -58,7 +60,7 @@ fun setThemeChangedListener(listener: () -> Unit) {
     onThemeChanged = listener
 }
 
-enum class SettingsSubPage { Settings, PerApp, Connections, Logs, Proxies, Rules }
+enum class SettingsSubPage { Settings, PerApp, Connections, Logs, Proxies, Rules, Dns }
 
 /** hiddify-style: phone uses 2 tabs (Home/Settings); these pages push in. */
 fun settingsSubPageTitle(page: SettingsSubPage): String = when (page) {
@@ -68,6 +70,7 @@ fun settingsSubPageTitle(page: SettingsSubPage): String = when (page) {
     SettingsSubPage.Logs -> "系统日志"
     SettingsSubPage.Proxies -> "节点"
     SettingsSubPage.Rules -> "分流规则"
+    SettingsSubPage.Dns -> "DNS 解析"
 }
 
 private fun isIgnoringBatteryOptimizations(context: android.content.Context): Boolean =
@@ -205,6 +208,19 @@ fun SettingsPage(onOpen: (SettingsSubPage) -> Unit, onProxyChanged: () -> Unit =
                             else -> "$ruleOn 条启用"
                         },
                         onClick = { onOpen(SettingsSubPage.Rules) },
+                    )
+                    IosHairline(startInset = 16.dp)
+                    val dnsTotal = DnsOverridesStore.entries.size
+                    val dnsOn = DnsOverridesStore.entries.count { it.enabled }
+                    IosRow(
+                        icon = Icons.Filled.Dns,
+                        iconBg = colors.iconBlue,
+                        title = "DNS 解析",
+                        value = when {
+                            dnsTotal == 0 -> "未设置"
+                            else -> "$dnsOn 条启用"
+                        },
+                        onClick = { onOpen(SettingsSubPage.Dns) },
                     )
                 }
             }

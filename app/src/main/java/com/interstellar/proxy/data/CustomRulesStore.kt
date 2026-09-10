@@ -2,6 +2,7 @@ package com.interstellar.proxy.data
 
 import com.interstellar.proxy.InterstellarApplication
 import com.interstellar.proxy.data.model.CustomRouteRule
+import com.interstellar.proxy.data.model.NodeFilterMode
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -23,7 +24,11 @@ object CustomRulesStore {
     var rules: MutableList<CustomRouteRule> = load()
         private set
 
-    fun enabled(): List<CustomRouteRule> = rules.filter { it.enabled && it.parsedMatchValues().isNotEmpty() && it.nodeKeywords.any { kw -> kw.isNotBlank() } }
+    fun enabled(): List<CustomRouteRule> = rules.filter {
+        it.enabled &&
+            it.parsedMatchValues().isNotEmpty() &&
+            (it.filterMode == NodeFilterMode.DIRECT || it.nodeKeywords.any { kw -> kw.isNotBlank() })
+    }
 
     fun newId(): String = UUID.randomUUID().toString()
 

@@ -3,6 +3,7 @@ package com.interstellar.proxy.data.config
 import com.interstellar.proxy.data.NodeMatcher
 import com.interstellar.proxy.data.model.CustomRouteRule
 import com.interstellar.proxy.data.model.DomainMatchType
+import com.interstellar.proxy.data.model.DnsOverrideEntry
 import com.interstellar.proxy.data.model.NodeFilterMode
 import com.interstellar.proxy.data.model.NodeType
 import com.interstellar.proxy.data.model.ProxyNode
@@ -27,6 +28,11 @@ object ConfigBuilder {
     const val AUTO_TAG = "auto"
     const val DIRECT_TAG = "direct"
     const val BLOCK_TAG = "block"
+    private const val DNS_HOSTS_TAG = "dns-hosts"
+
+    /** Tags that node names must never collide with. */
+    private val RESERVED_TAGS =
+        setOf(GROUP_TAG, AUTO_TAG, DIRECT_TAG, BLOCK_TAG, "dns-out", DNS_HOSTS_TAG, "tun-in", "mixed-in")
 
     data class BuildOptions(
         val mode: OutboundMode = OutboundMode.RULE,
@@ -39,6 +45,8 @@ object ConfigBuilder {
         val apiPort: Int = 9090,
         val apiSecret: String = "",
         val customRules: List<CustomRouteRule> = emptyList(),
+        /** User domain→IP injections, resolved by a hosts DNS server first. */
+        val dnsOverrides: List<DnsOverrideEntry> = emptyList(),
         /**
          * When true, domain→filtered-urltest rules are in the config even if
          * a leaf node is selected. Default traffic still uses [selectedNodeTag].
@@ -61,9 +69,7 @@ object ConfigBuilder {
 
     fun build(nodes: List<ProxyNode>, options: BuildOptions): String {
         val tags = dedupeTags(nodes)
-        val used = tags.toMutableSet().apply {
-            addAll(listOf(GROUP_TAG, AUTO_TAG, DIRECT_TAG, BLOCK_TAG, "dns-out", "tun-in", "mixed-in"))
-        }
+        val used = tags.toMutableSet().apply { addAll(RESERVED_TAGS) }
         val regionGroups = if (options.regionGroupsEnabled) deriveRegionGroups(tags, used) else emptyList()
         val customGroups = if (options.mode == OutboundMode.RULE && options.applyNodeFilterRules) {
             deriveCustomGroups(tags, options.customRules, used)
@@ -228,6 +234,8 @@ object ConfigBuilder {
     ): List<DerivedGroup> {
         return rules.mapNotNull { rule ->
             if (!rule.enabled) return@mapNotNull null
+            // direct rules need no node group — routed to the fixed direct outbound
+            if (rule.filterMode == NodeFilterMode.DIRECT) return@mapNotNull null
             if (rule.parsedMatchValues().isEmpty()) return@mapNotNull null
             val keywords = rule.nodeKeywords.map { it.trim() }.filter { it.isNotEmpty() }
             if (keywords.isEmpty()) return@mapNotNull null
@@ -257,9 +265,7 @@ object ConfigBuilder {
         if (tag == AUTO_TAG) return true
         if (!regionGroupsEnabled) return false
         val tags = dedupeTags(nodes)
-        val used = tags.toMutableSet().apply {
-            addAll(listOf(GROUP_TAG, AUTO_TAG, DIRECT_TAG, BLOCK_TAG, "dns-out", "tun-in", "mixed-in"))
-        }
+        val used = tags.toMutableSet().apply { addAll(RESERVED_TAGS) }
         return deriveRegionGroups(tags, used).any { it.tag == tag }
     }
 
@@ -522,8 +528,39 @@ object ConfigBuilder {
                     put("detour", if (options.mode == OutboundMode.DIRECT) DIRECT_TAG else GROUP_TAG)
                 },
             )
+            // user-injected domain→IP mappings (hosts semantics)
+            if (options.dnsOverrides.isNotEmpty()) {
+                add(
+                    buildJsonObject {
+                        put("tag", DNS_HOSTS_TAG)
+                        put("type", "hosts")
+                        putJsonObject("predefined") {
+                            for (entry in options.dnsOverrides) {
+                                for (domain in entry.parsedDomains()) {
+                                    put(domain, entry.ip)
+                                }
+                            }
+                        }
+                    },
+                )
+            }
         }
         putJsonArray("rules") {
+            // injected answers win over everything else — node server
+            // addresses included, so forcing a node domain is possible
+            if (options.dnsOverrides.isNotEmpty()) {
+                add(
+                    buildJsonObject {
+                        putJsonArray("domain") {
+                            options.dnsOverrides
+                                .flatMap { it.parsedDomains() }
+                                .distinct()
+                                .forEach { add(it) }
+                        }
+                        put("server", DNS_HOSTS_TAG)
+                    },
+                )
+            }
             add(
                 buildJsonObject {
                     put("outbound", "any")
@@ -587,9 +624,14 @@ object ConfigBuilder {
             if (options.mode == OutboundMode.RULE && options.applyNodeFilterRules) {
                 val byId = customGroups.associateBy { it.ruleId }
                 for (rule in options.customRules) {
-                    val group = byId[rule.id] ?: continue
+                    if (!rule.enabled) continue
                     val values = rule.parsedMatchValues()
                     if (values.isEmpty()) continue
+                    val outbound = when (rule.filterMode) {
+                        // direct rules need no derived group
+                        NodeFilterMode.DIRECT -> DIRECT_TAG
+                        else -> byId[rule.id]?.tag ?: continue
+                    }
                     add(
                         buildJsonObject {
                             when (rule.matchType) {
@@ -597,7 +639,7 @@ object ConfigBuilder {
                                 DomainMatchType.DOMAIN_SUFFIX -> putJsonArray("domain_suffix") { values.forEach { add(it) } }
                                 DomainMatchType.DOMAIN_KEYWORD -> putJsonArray("domain_keyword") { values.forEach { add(it) } }
                             }
-                            put("outbound", group.tag)
+                            put("outbound", outbound)
                         },
                     )
                 }
@@ -658,13 +700,12 @@ object ConfigBuilder {
 
     private fun dedupeTags(nodes: List<ProxyNode>): List<String> {
         val used = mutableSetOf<String>()
-        val reserved = setOf(GROUP_TAG, AUTO_TAG, DIRECT_TAG, BLOCK_TAG, "dns-out", "tun-in", "mixed-in")
         return nodes.map { node ->
             var base = node.name.trim().ifBlank { "${node.server}:${node.port}" }
             base = base.replace(Regex("[\\r\\n\"\\\\]"), " ").trim()
             var tag = base
             var index = 2
-            while (tag in used || tag in reserved) {
+            while (tag in used || tag in RESERVED_TAGS) {
                 tag = "$base ($index)"
                 index++
             }

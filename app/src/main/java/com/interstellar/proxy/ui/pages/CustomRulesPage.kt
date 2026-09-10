@@ -112,7 +112,7 @@ fun CustomRulesPage(viewModel: AppViewModel) {
             if (rules.isEmpty()) {
                 IosCard(modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        "还没有分流规则。例如 chatgpt.com 排除香港，或 openai.com 只用新加坡。",
+                        "还没有分流规则。例如 chatgpt.com 排除香港，openai.com 只用新加坡，或把自建服务域名设为直连。",
                         color = colors.textTertiary,
                         fontSize = 14.sp,
                         modifier = Modifier.padding(16.dp),
@@ -177,9 +177,13 @@ private fun RuleRow(
         DomainMatchType.DOMAIN_SUFFIX -> "后缀"
         DomainMatchType.DOMAIN_KEYWORD -> "关键字"
     }
-    val actionLabel = if (rule.filterMode == NodeFilterMode.INCLUDE) "只用" else "排除"
-    val keywords = rule.nodeKeywords.joinToString("、")
-    val hit = previewCount(rule, nodeNames)
+    val isDirect = rule.filterMode == NodeFilterMode.DIRECT
+    val actionLabel = when (rule.filterMode) {
+        NodeFilterMode.DIRECT -> "直连"
+        NodeFilterMode.INCLUDE -> "只用"
+        NodeFilterMode.EXCLUDE -> "排除"
+    }
+    val hit = if (isDirect) 0 else previewCount(rule, nodeNames)
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -190,8 +194,13 @@ private fun RuleRow(
         Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
             Text(rule.displayName(), color = colors.text, fontSize = 17.sp)
             Text(
-                "$matchLabel ${rule.matchValue.trim()}  ·  $actionLabel $keywords" +
-                    if (nodeNames.isNotEmpty()) "  ·  ${hit} 个节点" else "",
+                buildString {
+                    append("$matchLabel ${rule.matchValue.trim()}  ·  $actionLabel")
+                    if (!isDirect) {
+                        append(" ${rule.nodeKeywords.joinToString("、")}")
+                        if (nodeNames.isNotEmpty()) append("  ·  ${hit} 个节点")
+                    }
+                },
                 color = colors.textTertiary,
                 fontSize = 13.sp,
             )
@@ -234,9 +243,10 @@ private fun RuleEditorSheet(
         filterMode = filterMode,
         nodeKeywords = keywords,
     )
+    val isDirect = filterMode == NodeFilterMode.DIRECT
     val matchOk = draft.parsedMatchValues().isNotEmpty()
-    val keywordOk = keywords.any { it.isNotBlank() }
-    val hit = previewCount(draft, nodeNames)
+    val keywordOk = isDirect || keywords.any { it.isNotBlank() }
+    val hit = if (isDirect) 0 else previewCount(draft, nodeNames)
     val canSave = matchOk && keywordOk
 
     ModalBottomSheet(
@@ -298,71 +308,89 @@ private fun RuleEditorSheet(
             )
             Spacer(Modifier.height(16.dp))
 
-            Text("节点过滤", color = colors.textTertiary, fontSize = 13.sp)
+            Text("出站方式", color = colors.textTertiary, fontSize = 13.sp)
             Spacer(Modifier.height(8.dp))
             SegmentedControl(
-                items = listOf("排除这些节点", "只用这些节点"),
-                selected = if (filterMode == NodeFilterMode.EXCLUDE) 0 else 1,
+                items = listOf("直连", "排除节点", "只用节点"),
+                selected = when (filterMode) {
+                    NodeFilterMode.DIRECT -> 0
+                    NodeFilterMode.EXCLUDE -> 1
+                    NodeFilterMode.INCLUDE -> 2
+                },
                 onSelect = {
-                    filterMode = if (it == 0) NodeFilterMode.EXCLUDE else NodeFilterMode.INCLUDE
+                    filterMode = when (it) {
+                        0 -> NodeFilterMode.DIRECT
+                        1 -> NodeFilterMode.EXCLUDE
+                        else -> NodeFilterMode.INCLUDE
+                    }
                 },
                 modifier = Modifier.fillMaxWidth(),
             )
-            Spacer(Modifier.height(10.dp))
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                PRESET_KEYWORDS.forEach { kw ->
-                    val on = keywords.any { it.equals(kw, true) }
-                    KeywordChip(label = kw, selected = on) {
-                        keywords = if (on) keywords.filterNot { it.equals(kw, true) } else keywords + kw
+            if (isDirect) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "匹配的域名不走代理，直接连接。配合「DNS 解析」注入的 IP 可同时固定解析结果。",
+                    color = colors.textTertiary,
+                    fontSize = 12.sp,
+                )
+            } else {
+                Spacer(Modifier.height(10.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    PRESET_KEYWORDS.forEach { kw ->
+                        val on = keywords.any { it.equals(kw, true) }
+                        KeywordChip(label = kw, selected = on) {
+                            keywords = if (on) keywords.filterNot { it.equals(kw, true) } else keywords + kw
+                        }
+                    }
+                    keywords.filter { preset -> PRESET_KEYWORDS.none { it.equals(preset, true) } }.forEach { kw ->
+                        KeywordChip(label = kw, selected = true) {
+                            keywords = keywords.filterNot { it == kw }
+                        }
                     }
                 }
-                keywords.filter { preset -> PRESET_KEYWORDS.none { it.equals(preset, true) } }.forEach { kw ->
-                    KeywordChip(label = kw, selected = true) {
-                        keywords = keywords.filterNot { it == kw }
+                Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        Field(
+                            value = customKeyword,
+                            onChange = { customKeyword = it },
+                            placeholder = "自定义关键字，如 IEPL、流媒体",
+                        )
                     }
-                }
-            }
-            Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(modifier = Modifier.weight(1f)) {
-                    Field(
-                        value = customKeyword,
-                        onChange = { customKeyword = it },
-                        placeholder = "自定义关键字，如 IEPL、流媒体",
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "添加",
+                        color = colors.accent,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .pressableClick {
+                                val kw = customKeyword.trim()
+                                if (kw.isNotEmpty() && keywords.none { it.equals(kw, true) }) {
+                                    keywords = keywords + kw
+                                }
+                                customKeyword = ""
+                            }
+                            .padding(horizontal = 8.dp, vertical = 10.dp),
                     )
                 }
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    "添加",
-                    color = colors.accent,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .pressableClick {
-                            val kw = customKeyword.trim()
-                            if (kw.isNotEmpty() && keywords.none { it.equals(kw, true) }) {
-                                keywords = keywords + kw
-                            }
-                            customKeyword = ""
-                        }
-                        .padding(horizontal = 8.dp, vertical = 10.dp),
-                )
             }
 
             Spacer(Modifier.height(8.dp))
             val hint = when {
                 !matchOk -> "填写至少一个域名或关键字"
+                isDirect -> "匹配域名将直连，不经过任何节点"
                 !keywordOk -> "选择或添加至少一个节点关键字"
                 nodeNames.isEmpty() -> "保存后将按当前订阅生成对应的自动测速组"
                 hit == 0 -> "当前订阅没有匹配节点，规则不会生效"
                 filterMode == NodeFilterMode.EXCLUDE -> "将从 ${nodeNames.size} 个节点中排除后走 $hit 个节点的自动测速"
                 else -> "将只用匹配到的 $hit 个节点自动测速"
             }
-            Text(hint, color = if (hit == 0 && matchOk && keywordOk) colors.warning else colors.textTertiary, fontSize = 12.sp)
+            Text(hint, color = if (!isDirect && hit == 0 && matchOk && keywordOk) colors.warning else colors.textTertiary, fontSize = 12.sp)
 
             Spacer(Modifier.height(18.dp))
             Box(
