@@ -1,7 +1,14 @@
 package com.interstellar.proxy.ui.pages
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +32,8 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -69,11 +78,12 @@ fun SubscriptionsPage(viewModel: AppViewModel) {
     var autoUpdate by remember { mutableStateOf(Settings.autoUpdateEnabled) }
     var interval by remember { mutableStateOf(Settings.autoUpdateIntervalHours) }
 
-    PullToRefreshBox(
-        isRefreshing = refreshing,
-        onRefresh = { viewModel.refreshAll() },
-        modifier = Modifier.fillMaxSize(),
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = { viewModel.refreshAll() },
+            modifier = Modifier.fillMaxSize(),
+        ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -173,6 +183,8 @@ fun SubscriptionsPage(viewModel: AppViewModel) {
             }
             Spacer(Modifier.height(20.dp))
         }
+        }
+        SubscriptionsToast(viewModel, Modifier.align(Alignment.BottomCenter))
     }
 
     editTarget?.let { target ->
@@ -474,6 +486,52 @@ private fun EditSubscriptionDialog(
                     onSave(name, url)
                 }
             }
+        }
+    }
+}
+
+/** 底部悬浮玻璃 toast：订阅更新成功/失败反馈，自动消退。 */
+@Composable
+private fun SubscriptionsToast(viewModel: AppViewModel, modifier: Modifier = Modifier) {
+    val toast by viewModel.toast.collectAsState()
+    androidx.compose.animation.AnimatedVisibility(
+        visible = toast != null,
+        enter = slideInVertically(
+            tween(240, easing = com.interstellar.proxy.ui.theme.Motion.EaseOutQuart),
+        ) { it / 2 } + fadeIn(tween(240)),
+        exit = fadeOut(tween(200)) + slideOutVertically(tween(220)) { it / 2 },
+        modifier = modifier.padding(horizontal = 24.dp, vertical = 18.dp),
+    ) {
+        val t = toast ?: return@AnimatedVisibility
+        val colors = LocalInterstellarColors.current
+        val ok = t.kind == com.interstellar.proxy.ui.UiToast.Kind.Success
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(50))
+                .background(colors.panelSolid)
+                .border(
+                    1.dp,
+                    if (ok) colors.primaryBorder else colors.border,
+                    RoundedCornerShape(50),
+                )
+                .padding(horizontal = 16.dp, vertical = 11.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(if (ok) colors.success else colors.danger),
+            )
+            Spacer(Modifier.width(10.dp))
+            Text(
+                t.text,
+                color = colors.text,
+                fontSize = 13.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

@@ -274,6 +274,49 @@ fun NodesPage(viewModel: AppViewModel) {
                     Text("测速", color = colors.primary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
+            Spacer(Modifier.width(8.dp))
+            // 直连 TCP Ping：不依赖内核，即时并发，结果流式回填
+            val pinging by viewModel.pinging.collectAsState()
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (pinging) colors.primaryMuted else colors.bgDeep)
+                    .pressableClick { viewModel.tcpPingPool() }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+            ) {
+                if (pinging) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "spinP")
+                        val sweep by transition.animateFloat(
+                            initialValue = 0f,
+                            targetValue = 360f,
+                            animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+                                androidx.compose.animation.core.tween(
+                                    900,
+                                    easing = androidx.compose.animation.core.LinearEasing,
+                                ),
+                            ),
+                            label = "spinPA",
+                        )
+                        androidx.compose.foundation.Canvas(modifier = Modifier.size(14.dp)) {
+                            drawArc(
+                                color = colors.accent,
+                                startAngle = sweep,
+                                sweepAngle = 270f,
+                                useCenter = false,
+                                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                                    2.dp.toPx(),
+                                    cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                                ),
+                            )
+                        }
+                        Spacer(Modifier.width(6.dp))
+                        Text("Ping", color = colors.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                } else {
+                    Text("Ping", color = colors.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
         }
         Spacer(Modifier.height(10.dp))
 
@@ -713,6 +756,7 @@ fun DelayBadge(delay: Int, modifier: Modifier = Modifier) {
     val colors = LocalInterstellarColors.current
     val (text, color) = when {
         delay <= 0 -> "未测" to colors.textTertiary
+        delay >= 65000 -> "超时" to colors.danger
         delay < 200 -> "${delay}ms" to colors.success
         delay < 300 -> "${delay}ms" to colors.warning
         else -> "${delay}ms" to colors.danger

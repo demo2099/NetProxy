@@ -32,6 +32,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import java.security.SecureRandom
 
 data class SpeedState(
@@ -60,6 +62,11 @@ sealed interface ProbeState {
     data object Running : ProbeState
     data class Done(val result: com.interstellar.proxy.data.net.NetProbe.Result) : ProbeState
     data class Failed(val message: String) : ProbeState
+}
+
+/** Transient feedback pill (subscription updates etc.). */
+data class UiToast(val text: String, val kind: Kind) {
+    enum class Kind { Success, Error }
 }
 
 /**
@@ -144,6 +151,26 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _probe = MutableStateFlow<ProbeState>(ProbeState.Idle)
     val probe: StateFlow<ProbeState> = _probe
 
+    private val _toast = MutableStateFlow<UiToast?>(null)
+    val toast: StateFlow<UiToast?> = _toast
+
+    private var toastClearJob: Job? = null
+
+    /** True while the concurrent TCP ping sweep runs. */
+    private val _pinging = MutableStateFlow(false)
+    val pinging: StateFlow<Boolean> = _pinging
+
+    private val delaysMutex = kotlinx.coroutines.sync.Mutex()
+
+    fun showToast(text: String, kind: UiToast.Kind) {
+        _toast.value = UiToast(text, kind)
+        toastClearJob?.cancel()
+        toastClearJob = viewModelScope.launch {
+            delay(2800)
+            _toast.value = null
+        }
+    }
+
     private val _customRules = MutableStateFlow(CustomRulesStore.rules.toList())
     val customRules: StateFlow<List<CustomRouteRule>> = _customRules
 
@@ -166,6 +193,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         const val GROUP_TAG = "proxy"
         const val STARTING_TIMEOUT_MS = 15_000L
         const val SOCKET_DROP_TIMEOUT_MS = 400L
+
+        /** Sentinel delay for timed-out / unreachable nodes (ping & url-test). */
+        const val TIMEOUT_DELAY = 65535
     }
 
     private val commandClient = CommandClient(
@@ -601,6 +631,61 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Concurrent direct TCP ping over the current pool (satelite-style):
+     * no core required, results stream into [delays] one by one so a
+     * delay-sorted list re-orders immediately. Failed connects are marked
+     * with the TIMEOUT sentinel.
+     */
+    fun tcpPingPool() {
+        if (_pinging.value) return
+        _pinging.value = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val pool = SubscriptionRepository.poolOf(
+                    _subscriptions.value,
+                    _activeSubscriptionId.value,
+                    _mixEnabled.value,
+                    _mixSubscriptionIds.value,
+                )
+                if (pool.isEmpty()) {
+                    showToast("没有可测的节点", UiToast.Kind.Error)
+                    return@launch
+                }
+                val tags = ConfigBuilder.tagsFor(pool)
+                val semaphore = kotlinx.coroutines.sync.Semaphore(12)
+                kotlinx.coroutines.coroutineScope {
+                    pool.zip(tags).forEach { (node, tag) ->
+                        launch {
+                            semaphore.withPermit {
+                                val startedAt = System.currentTimeMillis()
+                                val ok = runCatching {
+                                    java.net.Socket().use { socket ->
+                                        socket.tcpNoDelay = true
+                                        socket.connect(
+                                            java.net.InetSocketAddress(node.server, node.port),
+                                            3000,
+                                        )
+                                    }
+                                }.isSuccess
+                                val ms = (System.currentTimeMillis() - startedAt).toInt()
+                                val value = when {
+                                    !ok || ms >= 3000 -> TIMEOUT_DELAY
+                                    else -> ms.coerceAtLeast(1)
+                                }
+                                delaysMutex.withLock {
+                                    _delays.value = _delays.value.toMutableMap().also { it[tag] = value }
+                                }
+                            }
+                        }
+                    }
+                }
+            } finally {
+                _pinging.value = false
+            }
+        }
+    }
+
     fun addSubscriptionFromUrl(name: String, url: String) {
         viewModelScope.launch(Dispatchers.IO) {
             _busy.value = true
@@ -670,7 +755,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshSubscription(id: String, fromPull: Boolean = false) {
         val sub = SubscriptionRepository.get(id) ?: return
         val url = sub.url ?: run {
-            _message.value = "本地订阅不支持刷新"
+            showToast("本地订阅不支持刷新", UiToast.Kind.Error)
             return
         }
         viewModelScope.launch(Dispatchers.IO) {
@@ -690,13 +775,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                                 lastUpdated = System.currentTimeMillis(),
                             ),
                         )
-                        _message.value = "已刷新 ${parsed.nodes.size} 个节点"
+                        showToast("「${sub.name}」已刷新 ${parsed.nodes.size} 个节点", UiToast.Kind.Success)
                     }
 
-                    SubscriptionParser.Result.Empty -> _message.value = "刷新后内容无法解析"
+                    SubscriptionParser.Result.Empty ->
+                        showToast("「${sub.name}」刷新后内容无法解析", UiToast.Kind.Error)
                 }
             } catch (e: Exception) {
-                _message.value = "刷新失败: ${e.message}"
+                showToast("「${sub.name}」刷新失败: ${e.message}", UiToast.Kind.Error)
             } finally {
                 _busy.value = false
                 _refreshing.value = false
@@ -706,10 +792,60 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Refresh every URL subscription at once (pull-to-refresh on the page). */
+    /** Refresh every URL subscription in parallel, then one aggregate toast. */
     fun refreshAll() {
-        val ids = SubscriptionRepository.subscriptions.filter { it.url != null }.map { it.id }
-        ids.forEach { refreshSubscription(it, fromPull = true) }
+        val subs = SubscriptionRepository.subscriptions.filter { it.url != null }
+        if (subs.isEmpty()) {
+            showToast("没有可更新的订阅", UiToast.Kind.Error)
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            _refreshing.value = true
+            _busy.value = true
+            val semaphore = kotlinx.coroutines.sync.Semaphore(3)
+            var ok = 0
+            try {
+                kotlinx.coroutines.coroutineScope {
+                    subs.forEach { sub ->
+                        launch {
+                            semaphore.withPermit {
+                                val success = runCatching {
+                                    val result = SubscriptionFetcher.fetch(sub.url!!)
+                                    when (val parsed = SubscriptionParser.parse(result.body, sub.id)) {
+                                        is SubscriptionParser.Result.Nodes -> {
+                                            SubscriptionRepository.upsert(
+                                                sub.copy(
+                                                    nodes = parsed.nodes,
+                                                    uploadBytes = result.uploadBytes,
+                                                    downloadBytes = result.downloadBytes,
+                                                    totalBytes = result.totalBytes,
+                                                    expireSeconds = result.expireSeconds,
+                                                    lastUpdated = System.currentTimeMillis(),
+                                                ),
+                                            )
+                                            true
+                                        }
+
+                                        SubscriptionParser.Result.Empty -> false
+                                    }
+                                }.getOrDefault(false)
+                                if (success) ok++
+                            }
+                        }
+                    }
+                }
+                if (ok == subs.size) {
+                    showToast("已更新全部 $ok 个订阅", UiToast.Kind.Success)
+                } else {
+                    showToast("更新完成 $ok/${subs.size} 个订阅", if (ok > 0) UiToast.Kind.Success else UiToast.Kind.Error)
+                }
+            } finally {
+                _busy.value = false
+                _refreshing.value = false
+                _subscriptions.value = SubscriptionRepository.subscriptions.toList()
+                _activeSubscriptionId.value = SubscriptionRepository.activeSubscriptionId
+            }
+        }
     }
 
     /** Edits an existing subscription's name / url. */
