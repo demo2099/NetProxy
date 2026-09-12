@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -64,6 +67,8 @@ private data class NodeEntry(
     val title: String? = null,
     /** Source subscription name in mix mode; null otherwise. */
     val source: String? = null,
+    /** Full node model when the tag maps into the stored pool. */
+    val node: com.interstellar.proxy.data.model.ProxyNode? = null,
 ) {
     val label: String get() = title ?: tag
 }
@@ -122,7 +127,11 @@ fun NodesPage(viewModel: AppViewModel) {
                 while (iterator.hasNext()) add(iterator.next())
             }
         }
-        val allItems = remember(liveItems, storedNodes, delays, sourceByTag) {
+        // tag → full node model, so cards and the detail sheet can show protocol info
+        val nodeByTag = remember(storedNodes) {
+            ConfigBuilder.tagsFor(storedNodes).zip(storedNodes).toMap()
+        }
+        val allItems = remember(liveItems, storedNodes, delays, sourceByTag, nodeByTag) {
             if (liveItems.isNotEmpty()) {
                 liveItems.map { item ->
                     NodeEntry(
@@ -131,12 +140,19 @@ fun NodesPage(viewModel: AppViewModel) {
                         delay = delays[item.tag] ?: item.urlTestDelay,
                         testedAt = item.urlTestTime,
                         source = sourceByTag[item.tag],
+                        node = nodeByTag[item.tag],
                     )
                 }
             } else {
                 val tags = ConfigBuilder.tagsFor(storedNodes)
                 storedNodes.zip(tags).map { (node, tag) ->
-                    NodeEntry(tag, node.type.wire, delays[tag] ?: 0, source = sourceByTag[tag])
+                    NodeEntry(
+                        tag,
+                        node.type.wire,
+                        delays[tag] ?: 0,
+                        source = sourceByTag[tag],
+                        node = node,
+                    )
                 }
             }
         }
@@ -417,15 +433,27 @@ private fun NodeRow(
                     .background(if (selected) colors.primary else colors.border),
             )
             Spacer(Modifier.width(12.dp))
-            Text(
-                item.label,
-                color = if (selected) colors.text else colors.textSecondary,
-                fontSize = 14.sp,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                modifier = Modifier.weight(1f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    item.label,
+                    color = if (selected) colors.text else colors.textSecondary,
+                    fontSize = 14.sp,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (item.node != null) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        "${item.node.protocolSummary()} · ${item.node.server}:${item.node.port}",
+                        color = colors.textTertiary,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
             item.source?.let { source ->
                 Spacer(Modifier.width(8.dp))
                 Text(
@@ -476,7 +504,7 @@ private fun NodeGridCell(
         Column(
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .padding(end = 4.dp, bottom = 22.dp),
+                .padding(end = 4.dp, bottom = 24.dp),
         ) {
             Text(
                 item.label,
@@ -497,10 +525,29 @@ private fun NodeGridCell(
                 )
             }
         }
-        DelayBadge(
-            delay = delay,
-            modifier = Modifier.align(Alignment.BottomEnd),
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .padding(end = 4.dp),
+        ) {
+            if (item.node != null) {
+                Text(
+                    item.node.protocolSummary(),
+                    color = colors.textTertiary,
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+            } else {
+                Spacer(Modifier.weight(1f))
+            }
+            DelayBadge(delay)
+        }
     }
 }
 
@@ -516,13 +563,13 @@ private fun NodeDetailSheet(item: NodeEntry, onDismiss: () -> Unit) {
         Column(
             modifier = Modifier
                 .padding(horizontal = 20.dp)
+                .verticalScroll(rememberScrollState())
                 .padding(bottom = 26.dp),
         ) {
             Text("节点信息", color = colors.text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(14.dp))
             DetailRow("名称", item.tag)
             item.source?.let { DetailRow("来源", it) }
-            DetailRow("类型", item.type)
             DetailRow("延迟", if (item.delay > 0) "${item.delay} ms" else "未测速")
             DetailRow(
                 "最近测速",
@@ -533,8 +580,110 @@ private fun NodeDetailSheet(item: NodeEntry, onDismiss: () -> Unit) {
                     "—"
                 },
             )
+
+            item.node?.let { n ->
+                SheetSection("协议")
+                DetailRow("类型", n.type.wire)
+                DetailRow("传输", when (n.network) {
+                    "tcp" -> "TCP"
+                    "ws" -> "WebSocket"
+                    "grpc" -> "gRPC"
+                    "http" -> "HTTP/2"
+                    "h2" -> "HTTP/2"
+                    "quic" -> "QUIC"
+                    else -> n.network
+                })
+                DetailRow(
+                    "安全",
+                    when {
+                        n.reality != null -> "REALITY"
+                        n.tls -> "TLS"
+                        else -> "无"
+                    },
+                )
+                DetailRow("摘要", n.protocolSummary())
+                n.flow?.let { DetailRow("Flow", it) }
+                n.sni?.let { DetailRow("SNI", it) }
+                n.alpn?.takeIf { it.isNotEmpty() }?.let { DetailRow("ALPN", it.joinToString(", ")) }
+                n.fingerprint?.let { DetailRow("uTLS 指纹", it) }
+                if (n.insecure == true) DetailRow("允许不安全", "是")
+
+                SheetSection("服务器")
+                DetailRow("地址", n.server)
+                DetailRow("端口", "${n.port}")
+                n.udp?.let { DetailRow("UDP", if (it) "支持" else "不支持") }
+                n.wsPath?.let { DetailRow("WS 路径", it) }
+                n.grpcServiceName?.let { DetailRow("gRPC 服务名", it) }
+                n.httpHost?.takeIf { it.isNotEmpty() }?.let { DetailRow("HTTP Host", it.joinToString(", ")) }
+                n.httpPath?.let { DetailRow("HTTP 路径", it) }
+                n.headers?.takeIf { it.isNotEmpty() }?.let {
+                    DetailRow("额外 Header", it.entries.joinToString(" · ") { (k, v) -> "$k=$v" })
+                }
+
+                // 协议特定参数
+                val params = buildList {
+                    n.method?.let { add("加密" to it) }
+                    n.alterId?.let { add("alterId" to "$it") }
+                    n.security?.let { add("VMess 加密" to it) }
+                    if (n.type == com.interstellar.proxy.data.model.NodeType.HYSTERIA2 && !n.hy2ObfsPassword.isNullOrBlank()) {
+                        add("混淆" to "已启用")
+                    }
+                    n.upMbps?.let { add("上行" to "$it Mbps") }
+                    n.downMbps?.let { add("下行" to "$it Mbps") }
+                    n.congestionControl?.let { add("拥塞控制" to it) }
+                    n.udpRelayMode?.let { add("UDP 中继" to it) }
+                    n.shadowTls?.let { add("Shadow-TLS" to "v${it.version}") }
+                    n.plugin?.let { p ->
+                        add(
+                            "插件" to buildString {
+                                append(p)
+                                n.pluginOpts?.takeIf { it.isNotEmpty() }?.let { opts ->
+                                    append(" (")
+                                    append(opts.entries.joinToString("; ") { (k, v) -> "$k=$v" })
+                                    append(")")
+                                }
+                            },
+                        )
+                    }
+                    n.wireguard?.let { wg ->
+                        add("WireGuard" to "${wg.localAddress.size} 个本地地址 · MTU ${wg.mtu ?: 1420}")
+                    }
+                }
+                if (params.isNotEmpty()) {
+                    SheetSection("参数")
+                    params.forEach { (k, v) -> DetailRow(k, v) }
+                }
+
+                SheetSection("凭据")
+                n.uuid?.let { DetailRow("UUID", maskSecret(it)) }
+                n.password?.let { DetailRow("密码", maskSecret(it)) }
+                n.sshUser?.let { DetailRow("SSH 用户", it) }
+                n.username?.let { DetailRow("用户名", it) }
+                if (n.uuid == null && n.password == null && n.sshUser == null && n.username == null) {
+                    DetailRow("—", "此协议无凭据字段")
+                }
+            }
         }
     }
+}
+
+@Composable
+private fun SheetSection(title: String) {
+    val colors = LocalInterstellarColors.current
+    Text(
+        title,
+        color = colors.textTertiary,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Medium,
+        letterSpacing = 2.sp,
+        modifier = Modifier.padding(top = 14.dp, bottom = 2.dp),
+    )
+}
+
+/** Mask a credential, keeping a short recognizable head/tail. */
+private fun maskSecret(value: String): String = when {
+    value.length <= 6 -> value.take(2) + "••••"
+    else -> value.take(4) + "••••" + value.takeLast(2)
 }
 
 @Composable
@@ -548,7 +697,14 @@ private fun DetailRow(label: String, value: String) {
     ) {
         Text(label, color = colors.textTertiary, fontSize = 13.sp)
         Spacer(Modifier.weight(1f))
-        Text(value, color = colors.text, fontSize = 13.sp, maxLines = 1)
+        Text(
+            value,
+            color = colors.text,
+            fontSize = 13.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = androidx.compose.ui.text.style.TextAlign.End,
+        )
     }
 }
 

@@ -70,6 +70,29 @@ data class ProxyNode(
     // original subscription id this node came from
     val subscriptionId: String? = null,
 ) {
+    /**
+     * Compact protocol line for node cards, e.g. "vless·grpc·tls",
+     * "trojan·ws·tls", "hysteria2·obfs".
+     */
+    fun protocolSummary(): String {
+        val parts = mutableListOf(type.wire)
+        val quicBased = type == NodeType.HYSTERIA2 || type == NodeType.TUIC
+        if (!quicBased && network != "tcp") {
+            parts += when (network) {
+                "http" -> "h2"
+                else -> network
+            }
+        }
+        when {
+            reality != null -> parts += "reality"
+            tls -> parts += "tls"
+        }
+        if (shadowTls != null) parts += "stls"
+        if (type == NodeType.HYSTERIA2 && !hy2ObfsPassword.isNullOrBlank()) parts += "obfs"
+        if (!plugin.isNullOrBlank()) parts += "plugin"
+        return parts.joinToString("·")
+    }
+
     @Serializable
     data class RealityParams(
         val publicKey: String,
