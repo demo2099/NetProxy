@@ -279,58 +279,25 @@ fun DashboardPage(
 
             Spacer(Modifier.height(12.dp))
 
-            // ── 状态行: 只报状态, 点击进入分流设置修改 ──
+            // ── 状态标签: 居中双胶囊, 点击进入分流设置 ──
             val routingLabel = when (routingMode) {
                 "global" -> "代理"
                 "direct" -> "直连"
                 else -> "规则"
             }
+            val scopeOn = proxyScope.label != "全部应用"
             Row(
+                horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(40.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(colors.bgDeep)
-                    .clickable { onOpenSubPage(SettingsSubPage.Proxy) }
-                    .padding(horizontal = 12.dp),
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(
-                    "路由",
-                    color = colors.textTertiary,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Medium,
-                    letterSpacing = 1.sp,
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    routingLabel,
-                    color = colors.textSecondary,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
+                StatusChip(label = "路由", value = routingLabel) {
+                    onOpenSubPage(SettingsSubPage.Proxy)
+                }
                 Spacer(Modifier.width(10.dp))
-                Text("·", color = colors.textTertiary, fontSize = 13.sp)
-                Spacer(Modifier.width(10.dp))
-                Text(
-                    "分流",
-                    color = colors.textTertiary,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Medium,
-                    letterSpacing = 1.sp,
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    proxyScope.label,
-                    color = colors.textSecondary,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                Spacer(Modifier.weight(1f))
-                Text("›", color = colors.textTertiary, fontSize = 16.sp)
+                StatusChip(label = "分流", value = if (scopeOn) "开" else "关") {
+                    onOpenSubPage(SettingsSubPage.Proxy)
+                }
             }
 
             Spacer(Modifier.height(8.dp))
@@ -718,6 +685,34 @@ private fun InstrumentCard(
 }
 
 /** All four dashboard instruments share one exact height so the grid stays uniform. */
+/** 文字描述型状态标签: [路由:规则] 点击跳分流设置 */
+@Composable
+private fun StatusChip(label: String, value: String, onClick: () -> Unit) {
+    val colors = LocalInterstellarColors.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(colors.bgDeep)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    ) {
+        Text(
+            label,
+            color = colors.textTertiary,
+            fontSize = 11.sp,
+            letterSpacing = 0.5.sp,
+        )
+        Text(":", color = colors.textTertiary, fontSize = 11.sp)
+        Text(
+            value,
+            color = colors.textSecondary,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
 private val InstrumentCardHeight = 104.dp
 
 /** Hero：笑脸或轨道样式，按压缩放。 */
