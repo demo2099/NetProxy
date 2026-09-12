@@ -118,8 +118,14 @@ class ServiceNotification(private val status: MutableLiveData<Status>, private v
     }
 
     override fun updateStatus(status: StatusMessage) {
+        updateTraffic(status.uplink, status.downlink)
+    }
+
+    /** Engine-agnostic traffic line (mihomo poller calls this directly). */
+    fun updateTraffic(upPerSecond: Long, downPerSecond: Long) {
+        if (!Settings.dynamicNotification || !checkPermission()) return
         val content =
-            Libbox.formatBytes(status.uplink) + "/s ↑\t" + Libbox.formatBytes(status.downlink) + "/s ↓"
+            Libbox.formatBytes(upPerSecond) + "/s ↑\t" + Libbox.formatBytes(downPerSecond) + "/s ↓"
         InterstellarApplication.notificationManager.notify(
             notificationId,
             notificationBuilder.setContentText(content).build(),

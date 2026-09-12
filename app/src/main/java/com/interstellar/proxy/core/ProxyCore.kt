@@ -72,6 +72,9 @@ interface CoreHost {
      * fd for config embedding; null when not in VPN mode.
      */
     fun openSidecarTun(spec: SidecarTunSpec): Int? = null
+
+    /** Per-second traffic sample for the persistent notification. */
+    fun onCoreTraffic(upPerSecond: Long, downPerSecond: Long) {}
 }
 
 object CoreEngines {

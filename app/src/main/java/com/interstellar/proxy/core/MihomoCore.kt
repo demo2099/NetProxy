@@ -7,7 +7,12 @@ import com.interstellar.proxy.data.SubscriptionRepository
 import com.interstellar.proxy.data.Settings
 import com.interstellar.proxy.data.config.ConfigBuilder
 import com.interstellar.proxy.data.config.MihomoConfigBuilder
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import java.io.File
 
 /**
@@ -34,6 +39,9 @@ class MihomoCore(
 
     /** fd of the tun handed over at spawn; re-injected on hot reloads. */
     private var activeTunFd: Int? = null
+
+    private val scope = CoroutineScope(Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
+    private var trafficJob: Job? = null
 
     override suspend fun startup() {
         ensureGeodata()
@@ -139,7 +147,28 @@ class MihomoCore(
             AppLog.log("mihomo", "API 探测失败: ${it.message}")
             Log.w(TAG, "version probe failed", it)
         }
+        startTrafficPoller()
         applySelection(overrides)
+    }
+
+    /** Feeds the persistent notification with per-second traffic. */
+    private fun startTrafficPoller() {
+        if (trafficJob?.isActive == true) return
+        var lastDown = -1L
+        var lastUp = -1L
+        trafficJob = scope.launch {
+            while (isActive) {
+                delay(2000)
+                val conn = runCatching { api.connections() }.getOrNull() ?: continue
+                val down = conn["downloadTotal"]?.let { (it as kotlinx.serialization.json.JsonPrimitive).content.toLongOrNull() } ?: continue
+                val up = conn["uploadTotal"]?.let { (it as kotlinx.serialization.json.JsonPrimitive).content.toLongOrNull() } ?: continue
+                if (lastDown >= 0 && down >= lastDown && up >= lastUp) {
+                    host.onCoreTraffic((up - lastUp) / 2, (down - lastDown) / 2)
+                }
+                lastDown = down
+                lastUp = up
+            }
+        }
     }
 
     override fun pause() {}
@@ -148,6 +177,8 @@ class MihomoCore(
 
     override suspend fun shutdown() {
         Holder.instance = null
+        trafficJob?.cancel()
+        trafficJob = null
         TProxyService.stop()
         activeTunFd = null
         sidecar?.destroy()

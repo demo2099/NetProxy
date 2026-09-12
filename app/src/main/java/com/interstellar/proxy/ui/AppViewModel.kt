@@ -113,6 +113,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _coreKind = MutableStateFlow(Settings.coreKind)
     val coreKind: StateFlow<CoreKind> = _coreKind
 
+    /** Active connection count from the mihomo API (dashboard core card). */
+    private val _mihomoConnectionCount = MutableStateFlow(0)
+    val mihomoConnectionCount: StateFlow<Int> = _mihomoConnectionCount
+
     /** tag → latest url-test delay (pushed via the outbounds stream). */
     private val _delays = MutableStateFlow<Map<String, Int>>(emptyMap())
     val delays: StateFlow<Map<String, Int>> = _delays
@@ -385,6 +389,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         clashApi.connections()?.let { conn ->
+            (conn["connections"] as? kotlinx.serialization.json.JsonArray)?.let {
+                _mihomoConnectionCount.value = it.size
+            }
             val down = conn["downloadTotal"]?.jsonPrimitive?.content?.toLongOrNull() ?: return@let
             val up = conn["uploadTotal"]?.jsonPrimitive?.content?.toLongOrNull() ?: return@let
             if (mihomoLastDown >= 0 && down >= mihomoLastDown && up >= mihomoLastUp) {

@@ -78,6 +78,7 @@ import io.nekohasekai.libbox.Libbox
 import com.interstellar.proxy.core.CoreGroup
 
 private const val CORE_VERSION = "sing-box 1.14.0"
+private const val MIHOMO_VERSION = "mihomo v1.19.30"
 
 @Composable
 fun DashboardPage(
@@ -105,6 +106,7 @@ fun DashboardPage(
     val history by viewModel.history.collectAsState()
     val routingMode by viewModel.routingMode.collectAsState()
     val coreKind by viewModel.coreKind.collectAsState()
+    val mihomoConnectionCount by viewModel.mihomoConnectionCount.collectAsState()
     val probe by viewModel.probe.collectAsState()
     val running = status == Status.Started
     val activeConnectionCount = connections.count { !it.closed }
@@ -412,8 +414,16 @@ fun DashboardPage(
                         )
                     }
                     Spacer(Modifier.height(4.dp))
+                    val connectionCount = when (coreKind) {
+                        com.interstellar.proxy.core.CoreKind.MIHOMO -> mihomoConnectionCount
+                        else -> activeConnectionCount
+                    }
+                    val coreLabel = when (coreKind) {
+                        com.interstellar.proxy.core.CoreKind.MIHOMO -> MIHOMO_VERSION
+                        else -> CORE_VERSION
+                    }
                     Text(
-                        "$CORE_VERSION · $activeConnectionCount 连接",
+                        "$coreLabel · $connectionCount 连接",
                         color = colors.textTertiary,
                         fontSize = 11.sp,
                         maxLines = 1,

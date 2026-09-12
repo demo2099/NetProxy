@@ -190,6 +190,10 @@ class BoxService(private val service: Service, private val platformInterface: Pl
     override fun openSidecarTun(spec: com.interstellar.proxy.core.SidecarTunSpec): Int? =
         (service as? VPNService)?.establishSidecarTun(spec)
 
+    override fun onCoreTraffic(upPerSecond: Long, downPerSecond: Long) {
+        notification.updateTraffic(upPerSecond, downPerSecond)
+    }
+
     fun serviceReload() {
         runBlocking {
             serviceReload0()

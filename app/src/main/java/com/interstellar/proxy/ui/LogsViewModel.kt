@@ -131,13 +131,28 @@ class LogsViewModel(application: Application) : AndroidViewModel(application) {
         runCatching {
             RandomAccessFile(file, "r").use { raf ->
                 raf.seek(tailOffset)
-                var line = raf.readLine()
-                while (line != null) {
-                    if (line.isNotBlank()) newLines.add(line)
-                    line = raf.readLine()
+                // readLine() decodes ISO-8859-1 (mangles CJK) — read raw bytes
+                // and decode UTF-8; a trailing partial line waits for the next
+                // poll (offset only advances past the last complete \n)
+                val buf = ByteArray((file.length() - tailOffset).toInt())
+                var read = 0
+                while (read < buf.size) {
+                    val n = raf.read(buf, read, buf.size - read)
+                    if (n < 0) break
+                    read += n
+                }
+                var lastNewline = -1
+                for (i in 0 until read) {
+                    if (buf[i] == '\n'.code.toByte()) lastNewline = i
+                }
+                if (lastNewline >= 0) {
+                    val text = String(buf, 0, lastNewline + 1, Charsets.UTF_8)
+                    text.split('\n').forEach { line ->
+                        if (line.isNotBlank()) newLines.add(line.removeSuffix("\r"))
+                    }
+                    tailOffset += lastNewline + 1
                 }
             }
-            tailOffset = file.length()
         }
         val stamp = System.currentTimeMillis()
         newLines.forEach { raw ->
