@@ -45,6 +45,7 @@ import com.interstellar.proxy.ui.components.IosCard
 import com.interstellar.proxy.ui.components.IosSectionFooter
 import com.interstellar.proxy.ui.components.IosSectionLabel
 import com.interstellar.proxy.ui.components.IosToggleRow
+import com.interstellar.proxy.ui.components.PageHeader
 import com.interstellar.proxy.ui.components.SegmentedControl
 import com.interstellar.proxy.ui.components.iosPressable
 import com.interstellar.proxy.ui.components.pressableClick
@@ -79,21 +80,22 @@ fun SubscriptionsPage(viewModel: AppViewModel) {
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Spacer(Modifier.weight(1f))
-                Text(
-                    "添加",
-                    color = colors.accent,
-                    fontSize = 17.sp,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .iosPressable { showAdd = true }
-                        .padding(horizontal = 4.dp, vertical = 6.dp),
-                )
-            }
+            PageHeader(
+                kicker = "SUBSCRIPTIONS",
+                title = "订阅",
+                trailing = {
+                    Text(
+                        "＋ 添加",
+                        color = colors.accent,
+                        fontSize = 14.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .iosPressable { showAdd = true }
+                            .padding(horizontal = 14.dp, vertical = 9.dp),
+                    )
+                },
+            )
 
             IosSectionLabel("合并订阅 (Mix)")
             IosCard(modifier = Modifier.fillMaxWidth()) {

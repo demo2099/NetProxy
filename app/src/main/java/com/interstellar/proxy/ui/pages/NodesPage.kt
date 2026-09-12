@@ -50,6 +50,7 @@ import com.interstellar.proxy.data.SubscriptionRepository
 import com.interstellar.proxy.data.config.ConfigBuilder
 import com.interstellar.proxy.ui.AppViewModel
 import com.interstellar.proxy.ui.components.IosSwitch
+import com.interstellar.proxy.ui.components.PageHeader
 import com.interstellar.proxy.ui.components.SegmentedControl
 import com.interstellar.proxy.ui.components.glassSurface
 import com.interstellar.proxy.ui.components.pressableClick
@@ -112,7 +113,7 @@ fun NodesPage(viewModel: AppViewModel) {
             .fillMaxSize()
             .padding(horizontal = 16.dp),
     ) {
-        Spacer(Modifier.height(8.dp))
+        PageHeader(kicker = "NODES", title = "节点")
 
         val liveItems = remember(mainGroup) {
             if (mainGroup == null) emptyList()

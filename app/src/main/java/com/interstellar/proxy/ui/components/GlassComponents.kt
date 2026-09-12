@@ -309,7 +309,7 @@ fun TrafficSparkline(
 
 /**
  * Floating glass dock (satelite's capsule navbar, bottom-docked for phones):
- * frosted sliding thumb under icon+label items, pill geometry.
+ * the selected item sits on an accent rounded-square highlight block.
  */
 data class DockItem(
     val label: String,
@@ -334,32 +334,22 @@ fun GlassDock(
             .clip(RoundedCornerShape(50))
             .glassSurface(50.dp, light, colors.panelTop, colors.panelBottom, colors.border),
     ) {
-        val itemWidth = maxWidth / items.size
-        val thumbX by androidx.compose.animation.core.animateDpAsState(
-            targetValue = itemWidth * selected.coerceIn(0, items.size - 1),
-            animationSpec = spring(dampingRatio = 0.85f, stiffness = 420f),
-            label = "dockThumb",
-        )
-
-        // frosted sliding thumb
-        Box(
+        Row(
             modifier = Modifier
-                .offset(x = thumbX)
-                .width(itemWidth)
-                .fillMaxHeight()
-                .padding(5.dp)
-                .clip(RoundedCornerShape(50))
-                .background(colors.surfaceHigh)
-                .border(1.dp, colors.border, RoundedCornerShape(50)),
-        )
-
-        Row(modifier = Modifier.fillMaxSize()) {
+                .fillMaxSize()
+                .padding(horizontal = 6.dp, vertical = 5.dp),
+        ) {
             items.forEachIndexed { index, item ->
                 val isSelected = index == selected
                 val fg by animateColorAsState(
-                    targetValue = if (isSelected) colors.primary else colors.textTertiary,
+                    targetValue = if (isSelected) colors.onPrimary else colors.textTertiary,
                     animationSpec = tween(Motion.DURATION_MEDIUM, easing = Motion.Ease),
                     label = "dockFg",
+                )
+                val blockColor by animateColorAsState(
+                    targetValue = if (isSelected) colors.primary else Color.Transparent,
+                    animationSpec = tween(Motion.DURATION_MEDIUM, easing = Motion.Ease),
+                    label = "dockBlock",
                 )
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -367,6 +357,9 @@ fun GlassDock(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
+                        .padding(horizontal = 4.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(blockColor)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -389,6 +382,44 @@ fun GlassDock(
                 }
             }
         }
+    }
+}
+
+/**
+ * Page header per the reference design: a small uppercase kicker
+ * above a big bold title, with an optional trailing action.
+ */
+@Composable
+fun PageHeader(
+    kicker: String,
+    title: String,
+    modifier: Modifier = Modifier,
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    val colors = LocalInterstellarColors.current
+    Row(
+        verticalAlignment = Alignment.Top,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(start = 4.dp, top = 6.dp, end = 4.dp, bottom = 6.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                kicker,
+                color = colors.textTertiary,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 2.5.sp,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                title,
+                color = colors.text,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        trailing?.invoke()
     }
 }
 

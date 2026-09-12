@@ -62,16 +62,16 @@ fun interstellarColors(dark: Boolean, accentId: String?): InterstellarColors {
     }
     return if (dark) {
         InterstellarColors(
-            bg = Color(0xFF11141C),
-            bgDeep = Color(0xFF1B2130),
-            text = Color(0xFFF2F4F8),
+            bg = Color(0xFF0D1220),
+            bgDeep = Color(0xFF1A2136),
+            text = Color(0xFFF0F3FA),
             textSecondary = Color(0xFFC3C9D9),
-            textTertiary = Color(0xFF8A93A8),
+            textTertiary = Color(0xFF7A8299),
             panel = Color(0x09FFFFFF),
             panelTop = Color(0x17FFFFFF),
             panelBottom = Color(0x08FFFFFF),
-            surfaceHigh = Color(0x24FFFFFF),
-            panelSolid = Color(0xFF1A1F2C),
+            surfaceHigh = Color(0xFF39435C),
+            panelSolid = Color(0xFF161C2E),
             border = Color(0x16FFFFFF),
             primary = primary,
             primaryHover = primary.copy(alpha = 0.82f),
