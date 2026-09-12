@@ -83,6 +83,14 @@ class BoxService(private val service: Service, private val platformInterface: Pl
     private var core: ProxyCore? = null
 
     private var receiverRegistered = false
+
+    /**
+     * A start intent that arrived while the previous run was still tearing
+     * down (core switching stops-then-starts): honor it by restarting in
+     * place once the shutdown finishes, instead of dropping it.
+     */
+    @Volatile
+    private var pendingRestart = false
     private val receiver =
         object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
@@ -258,7 +266,12 @@ class BoxService(private val service: Service, private val platformInterface: Pl
             core = null
             withContext(Dispatchers.Main) {
                 status.value = Status.Stopped
-                service.stopSelf()
+                if (pendingRestart) {
+                    pendingRestart = false
+                    onStartCommand()
+                } else {
+                    service.stopSelf()
+                }
             }
         }
     }
@@ -292,7 +305,17 @@ class BoxService(private val service: Service, private val platformInterface: Pl
     @OptIn(DelicateCoroutinesApi::class)
     @Suppress("SameReturnValue")
     internal fun onStartCommand(): Int {
-        if (status.value != Status.Stopped) return Service.START_NOT_STICKY
+        when (status.value) {
+            Status.Starting, Status.Started -> return Service.START_NOT_STICKY
+
+            // still tearing down the previous run — run again right after
+            Status.Stopping -> {
+                pendingRestart = true
+                return Service.START_NOT_STICKY
+            }
+
+            null, Status.Stopped -> Unit
+        }
         status.value = Status.Starting
 
         if (!receiverRegistered) {
