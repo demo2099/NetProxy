@@ -410,21 +410,30 @@ fun DashboardPage(
                             .fillMaxWidth()
                             .height(34.dp),
                     )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "↓ $down/s  ↑ $up/s",
-                        color = colors.textSecondary,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
-                        maxLines = 1,
-                    )
-                    Text(
-                        "Σ $total",
-                        color = colors.textTertiary,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
-                        maxLines = 1,
-                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            "↓ $down/s ↑ $up/s",
+                            color = colors.textSecondary,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        Text(
+                            "Σ $total",
+                            color = colors.textTertiary,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
 
@@ -635,7 +644,7 @@ private fun InstrumentCard(
 }
 
 /** All four dashboard instruments share one exact height so the grid stays uniform. */
-private val InstrumentCardHeight = 114.dp
+private val InstrumentCardHeight = 104.dp
 
 /** Hero：笑脸或轨道样式，按压缩放。 */
 @Composable
