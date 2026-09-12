@@ -133,6 +133,41 @@ fun SettingsPage(onOpen: (SettingsSubPage) -> Unit, onProxyChanged: () -> Unit =
 
         Spacer(Modifier.height(22.dp))
 
+        // ---- 内核 ----
+        PrefSectionLabel("内核")
+        GlassCard(modifier = Modifier.fillMaxWidth(), contentPadding = 6.dp) {
+            val coreOrder = listOf(
+                com.interstellar.proxy.core.CoreKind.SINGBOX,
+                com.interstellar.proxy.core.CoreKind.MIHOMO,
+                com.interstellar.proxy.core.CoreKind.XRAY,
+            )
+            PrefSegRow(
+                title = "代理内核",
+                desc = "订阅、规则与 DNS 配置随内核切换",
+                items = coreOrder.map { it.displayName },
+                selected = coreOrder.indexOf(Settings.coreKind).coerceAtLeast(0),
+                layout = SegLayout.Below,
+                onSelect = { index ->
+                    val picked = coreOrder[index]
+                    if (picked == com.interstellar.proxy.core.CoreKind.SINGBOX) {
+                        if (Settings.coreKind != picked) {
+                            Settings.coreKind = picked
+                            onProxyChanged()
+                        }
+                    } else {
+                        android.widget.Toast.makeText(
+                            context,
+                            "${picked.displayName} 内核即将上线",
+                            android.widget.Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                },
+            )
+        }
+        IosSectionFooter("多内核施工中:mihomo 与 Xray 将以独立子进程接入,与 sing-box 一键切换。")
+
+        Spacer(Modifier.height(22.dp))
+
         // ---- 连接 ----
         PrefSectionLabel("连接")
         GlassCard(modifier = Modifier.fillMaxWidth(), contentPadding = 6.dp) {

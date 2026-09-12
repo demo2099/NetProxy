@@ -49,6 +49,14 @@ object Settings {
             commit()
         }
 
+    /** Active proxy core. sing-box in-process; mihomo/Xray sidecars (multi-core). */
+    var coreKind: com.interstellar.proxy.core.CoreKind
+        get() = com.interstellar.proxy.core.CoreKind.from(properties.getProperty("coreKind", "singbox"))
+        set(value) {
+            properties.setProperty("coreKind", value.wire)
+            commit()
+        }
+
     var allowBypass: Boolean
         get() = properties.getProperty("allowBypass", "false").toBoolean()
         set(value) {

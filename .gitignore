@@ -18,6 +18,9 @@ signing.properties
 # 112MB sing-box core — rebuild via `make lib_android` (see README)
 app/libs/libbox.aar
 
+# sidecar cores (mihomo/xray/hev) — fetched via tools/fetch_cores.py (CI 缓存)
+app/src/main/jniLibs/
+
 # agent workspace / kotlin session files
 .zcode/
 .kotlin/

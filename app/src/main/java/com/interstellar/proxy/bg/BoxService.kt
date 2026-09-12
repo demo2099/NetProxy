@@ -18,21 +18,21 @@ import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.MutableLiveData
-import io.nekohasekai.libbox.CommandServer
-import io.nekohasekai.libbox.CommandServerHandler
 import io.nekohasekai.libbox.Notification
-import io.nekohasekai.libbox.OverrideOptions
 import io.nekohasekai.libbox.PlatformInterface
-import io.nekohasekai.libbox.SystemProxyStatus
 import com.interstellar.proxy.MainActivity
 import com.interstellar.proxy.R
 import com.interstellar.proxy.InterstellarApplication
 import com.interstellar.proxy.constant.Action
 import com.interstellar.proxy.constant.Alert
 import com.interstellar.proxy.constant.Status
+import com.interstellar.proxy.core.CoreEngines
+import com.interstellar.proxy.core.CoreHost
+import com.interstellar.proxy.core.CoreOverrides
+import com.interstellar.proxy.core.ProxyCore
+import com.interstellar.proxy.core.SystemProxyState
 import com.interstellar.proxy.data.ConfigStore
 import com.interstellar.proxy.data.Settings
-import com.interstellar.proxy.ktx.StringArray
 import com.interstellar.proxy.ktx.hasPermission
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
@@ -42,7 +42,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 
 class BoxService(private val service: Service, private val platformInterface: PlatformInterface) :
-    CommandServerHandler {
+    CoreHost {
     companion object {
         private const val TAG = "BoxService"
 
@@ -80,7 +80,7 @@ class BoxService(private val service: Service, private val platformInterface: Pl
     private val status = MutableLiveData(Status.Stopped)
     private val binder = ServiceBinder(status)
     private val notification = ServiceNotification(status, service)
-    private lateinit var commandServer: CommandServer
+    private var core: ProxyCore? = null
 
     private var receiverRegistered = false
     private val receiver =
@@ -100,10 +100,16 @@ class BoxService(private val service: Service, private val platformInterface: Pl
             }
         }
 
-    private fun startCommandServer() {
-        val commandServer = CommandServer(this, platformInterface)
-        commandServer.start()
-        this.commandServer = commandServer
+    private fun buildOverrides() =
+        CoreOverrides(
+            autoRedirect = Settings.autoRedirect,
+            perAppEnabled = Settings.perAppProxyEnabled,
+            perAppInclude = Settings.perAppProxyMode == Settings.PER_APP_PROXY_INCLUDE,
+            perAppPackages = Settings.perAppProxyList,
+        )
+
+    private suspend fun startCore() {
+        core = CoreEngines.create(Settings.coreKind, platformInterface, this).also { it.startup() }
     }
 
     private suspend fun startService() {
@@ -122,16 +128,13 @@ class BoxService(private val service: Service, private val platformInterface: Pl
             DefaultNetworkMonitor.start()
 
             try {
-                commandServer.startOrReloadService(
-                    content,
-                    buildOverrideOptions(),
-                )
+                core?.applyConfig(content, buildOverrides())
             } catch (e: Exception) {
                 stopAndAlert(Alert.CreateService, e.message)
                 return
             }
 
-            if (commandServer.needWIFIState()) {
+            if (core?.needWifiState() == true) {
                 val wifiPermission =
                     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
                         android.Manifest.permission.ACCESS_FINE_LOCATION
@@ -157,22 +160,10 @@ class BoxService(private val service: Service, private val platformInterface: Pl
         }
     }
 
-    private fun buildOverrideOptions() = OverrideOptions().apply {
-        autoRedirect = Settings.autoRedirect
-        if (Settings.perAppProxyEnabled) {
-            val appList = Settings.perAppProxyList
-            if (Settings.perAppProxyMode == Settings.PER_APP_PROXY_INCLUDE) {
-                includePackage =
-                    StringArray((appList + InterstellarApplication.application.packageName).iterator())
-            } else {
-                excludePackage =
-                    StringArray((appList - InterstellarApplication.application.packageName).iterator())
-            }
-        }
-    }
+    // ---- CoreHost: callbacks from the active engine ----
 
     @OptIn(DelicateCoroutinesApi::class)
-    override fun serviceStop() {
+    override fun onCoreRequestStop() {
         // Core dropped the tun (VPN revoked, another app took the
         // system proxy, crash). Tear the Android service down so a
         // later start isn't blocked on Status.Starting.
@@ -181,7 +172,20 @@ class BoxService(private val service: Service, private val platformInterface: Pl
         }
     }
 
-    override fun serviceReload() {
+    override fun onCoreRequestReload() {
+        serviceReload()
+    }
+
+    override fun systemProxyState(): SystemProxyState? {
+        val vpn = service as? VPNService ?: return null
+        return SystemProxyState(vpn.systemProxyAvailable, vpn.systemProxyEnabled)
+    }
+
+    override fun onSetSystemProxy(enabled: Boolean) {
+        serviceReload()
+    }
+
+    fun serviceReload() {
         runBlocking {
             serviceReload0()
         }
@@ -194,16 +198,13 @@ class BoxService(private val service: Service, private val platformInterface: Pl
             return
         }
         try {
-            commandServer.startOrReloadService(
-                content,
-                buildOverrideOptions(),
-            )
+            core?.applyConfig(content, buildOverrides())
         } catch (e: Exception) {
             stopAndAlert(Alert.CreateService, e.message)
             return
         }
 
-        if (commandServer.needWIFIState()) {
+        if (core?.needWifiState() == true) {
             val wifiPermission =
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
                     android.Manifest.permission.ACCESS_FINE_LOCATION
@@ -217,25 +218,12 @@ class BoxService(private val service: Service, private val platformInterface: Pl
         }
     }
 
-    override fun getSystemProxyStatus(): SystemProxyStatus? {
-        val status = SystemProxyStatus()
-        if (service is VPNService) {
-            status.available = service.systemProxyAvailable
-            status.enabled = service.systemProxyEnabled
-        }
-        return status
-    }
-
-    override fun setSystemProxyEnabled(isEnabled: Boolean) {
-        serviceReload()
-    }
-
     @RequiresApi(Build.VERSION_CODES.M)
     private fun serviceUpdateIdleMode() {
         if (InterstellarApplication.powerManager.isDeviceIdleMode) {
-            commandServer.pause()
+            core?.pause()
         } else {
-            commandServer.wake()
+            core?.wake()
         }
     }
 
@@ -257,22 +245,12 @@ class BoxService(private val service: Service, private val platformInterface: Pl
                 fileDescriptor = null
             }
             DefaultNetworkMonitor.stop()
-            if (::commandServer.isInitialized) {
-                closeService()
-                commandServer.close()
-            }
+            core?.shutdown()
+            core = null
             withContext(Dispatchers.Main) {
                 status.value = Status.Stopped
                 service.stopSelf()
             }
-        }
-    }
-
-    private fun closeService() {
-        runCatching {
-            commandServer.closeService()
-        }.onFailure {
-            commandServer.setError("android: close service: ${it.message}")
         }
     }
 
@@ -284,10 +262,8 @@ class BoxService(private val service: Service, private val platformInterface: Pl
             fileDescriptor = null
         }
         DefaultNetworkMonitor.stop()
-        if (::commandServer.isInitialized) {
-            closeService()
-            commandServer.close()
-        }
+        core?.shutdown()
+        core = null
         withContext(Dispatchers.Main) {
             if (receiverRegistered) {
                 service.unregisterReceiver(receiver)
@@ -326,7 +302,7 @@ class BoxService(private val service: Service, private val platformInterface: Pl
 
         GlobalScope.launch(Dispatchers.IO) {
             try {
-                startCommandServer()
+                startCore()
             } catch (e: Exception) {
                 stopAndAlert(Alert.StartCommandServer, e.message)
                 return@launch
@@ -390,17 +366,4 @@ class BoxService(private val service: Service, private val platformInterface: Pl
             InterstellarApplication.notification.cancel(identifier, typeID)
         }
     }
-
-    override fun triggerNativeCrash() {
-        Thread {
-            Thread.sleep(200)
-            throw RuntimeException("debug native crash")
-        }.start()
-    }
-
-    override fun writeDebugMessage(message: String?) {
-        Log.d("interstellar", message!!)
-    }
-
-    override fun connectSSHAgent(): Int = -1
 }

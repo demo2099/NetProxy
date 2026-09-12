@@ -53,6 +53,15 @@ jobs:
       - name: Ensure app/libs exists
         run: mkdir -p app/libs
 
+      - name: Cache sidecar cores (mihomo)
+        uses: actions/cache@v4
+        with:
+          path: app/src/main/jniLibs
+          key: sidecar-mihomo-v1.19.30
+
+      - name: Fetch sidecar cores
+        run: python tools/fetch_cores.py
+
       # sing-box v1.14 起移除了 `make lib_android`, 改用 cmd/internal/build_libbox。
       # 该工具(build_shared/sdk.go)固定使用 NDK 28.0.13004108、强制 openjdk 17,
       # 产出 libbox.aar + libbox-legacy.aar(io.nekohasekai.libbox), 只需拷贝前者。
