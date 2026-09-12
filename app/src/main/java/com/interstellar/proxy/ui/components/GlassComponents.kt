@@ -309,7 +309,7 @@ fun TrafficSparkline(
 
 /**
  * Floating glass dock (satelite's capsule navbar, bottom-docked for phones):
- * the selected item sits on an accent rounded-square highlight block.
+ * a frosted thumb that slides between icon+label items.
  */
 data class DockItem(
     val label: String,
@@ -334,22 +334,32 @@ fun GlassDock(
             .clip(RoundedCornerShape(50))
             .glassSurface(50.dp, light, colors.panelTop, colors.panelBottom, colors.border),
     ) {
-        Row(
+        val itemWidth = maxWidth / items.size
+        val thumbX by androidx.compose.animation.core.animateDpAsState(
+            targetValue = itemWidth * selected.coerceIn(0, items.size - 1),
+            animationSpec = spring(dampingRatio = 0.85f, stiffness = 420f),
+            label = "dockThumb",
+        )
+
+        // frosted sliding thumb
+        Box(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 6.dp, vertical = 5.dp),
-        ) {
+                .offset(x = thumbX)
+                .width(itemWidth)
+                .fillMaxHeight()
+                .padding(5.dp)
+                .clip(RoundedCornerShape(50))
+                .background(colors.surfaceHigh)
+                .border(1.dp, colors.border, RoundedCornerShape(50)),
+        )
+
+        Row(modifier = Modifier.fillMaxSize()) {
             items.forEachIndexed { index, item ->
                 val isSelected = index == selected
                 val fg by animateColorAsState(
-                    targetValue = if (isSelected) colors.onPrimary else colors.textTertiary,
+                    targetValue = if (isSelected) colors.primary else colors.textTertiary,
                     animationSpec = tween(Motion.DURATION_MEDIUM, easing = Motion.Ease),
                     label = "dockFg",
-                )
-                val blockColor by animateColorAsState(
-                    targetValue = if (isSelected) colors.primary else Color.Transparent,
-                    animationSpec = tween(Motion.DURATION_MEDIUM, easing = Motion.Ease),
-                    label = "dockBlock",
                 )
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -357,9 +367,6 @@ fun GlassDock(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .padding(horizontal = 4.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(blockColor)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
