@@ -57,6 +57,9 @@ object TProxyService {
     @JvmStatic
     private external fun TProxyIsRunning(): Boolean
 
+    @JvmStatic
+    private external fun TProxyGetStats(): LongArray?
+
     init {
         System.loadLibrary("hev-socks5-tunnel")
     }
