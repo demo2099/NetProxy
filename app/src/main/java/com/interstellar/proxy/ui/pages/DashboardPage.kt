@@ -391,6 +391,23 @@ fun DashboardPage(
                     caption = "核心",
                     onClick = { onOpenSubPage(SettingsSubPage.Logs) },
                     modifier = Modifier.weight(1f),
+                    secondary = {
+                        val connectionCount = when (coreKind) {
+                            com.interstellar.proxy.core.CoreKind.MIHOMO -> mihomoConnectionCount
+                            else -> activeConnectionCount
+                        }
+                        val coreLabel = when (coreKind) {
+                            com.interstellar.proxy.core.CoreKind.MIHOMO -> MIHOMO_VERSION
+                            else -> CORE_VERSION
+                        }
+                        Text(
+                            "$coreLabel · $connectionCount 连接",
+                            color = colors.textTertiary,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
                 ) {
                     if (running && connectedAt > 0L) {
                         TickingElapsed(connectedAt) { elapsed ->
@@ -413,27 +430,36 @@ fun DashboardPage(
                             maxLines = 1,
                         )
                     }
-                    Spacer(Modifier.height(4.dp))
-                    val connectionCount = when (coreKind) {
-                        com.interstellar.proxy.core.CoreKind.MIHOMO -> mihomoConnectionCount
-                        else -> activeConnectionCount
-                    }
-                    val coreLabel = when (coreKind) {
-                        com.interstellar.proxy.core.CoreKind.MIHOMO -> MIHOMO_VERSION
-                        else -> CORE_VERSION
-                    }
-                    Text(
-                        "$coreLabel · $connectionCount 连接",
-                        color = colors.textTertiary,
-                        fontSize = 11.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
                 }
                 InstrumentCard(
                     caption = "流量",
                     onClick = { onOpenSubPage(SettingsSubPage.Connections) },
                     modifier = Modifier.weight(1f),
+                    secondary = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(
+                                "↓ $down/s ↑ $up/s",
+                                color = colors.textSecondary,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                            Text(
+                                "Σ $total",
+                                color = colors.textTertiary,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    },
                 ) {
                     TrafficSparkline(
                         history = history,
@@ -443,30 +469,6 @@ fun DashboardPage(
                             .fillMaxWidth()
                             .height(34.dp),
                     )
-                    Spacer(Modifier.height(4.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(
-                            "↓ $down/s ↑ $up/s",
-                            color = colors.textSecondary,
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false),
-                        )
-                        Text(
-                            "Σ $total",
-                            color = colors.textTertiary,
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
                 }
             }
 
@@ -480,6 +482,22 @@ fun DashboardPage(
                     caption = "出口网络",
                     onClick = { viewModel.probeNetwork() },
                     modifier = Modifier.weight(1f),
+                    secondary = {
+                        val sp = probe
+                        if (sp is ProbeState.Done) {
+                            Text(
+                                listOfNotNull(
+                                    sp.result.country,
+                                    "${sp.result.latencyMs} ms",
+                                    if (sp.result.viaProxy) "经代理" else "直连",
+                                ).joinToString(" · "),
+                                color = colors.textTertiary,
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    },
                 ) {
                     when (val p = probe) {
                         ProbeState.Running -> Text(
@@ -489,29 +507,15 @@ fun DashboardPage(
                             fontFamily = FontFamily.Monospace,
                         )
 
-                        is ProbeState.Done -> Column {
-                            Text(
-                                p.result.ip,
-                                color = colors.text,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                fontFamily = FontFamily.Monospace,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                listOfNotNull(
-                                    p.result.country,
-                                    "${p.result.latencyMs} ms",
-                                    if (p.result.viaProxy) "经代理" else "直连",
-                                ).joinToString(" · "),
-                                color = colors.textTertiary,
-                                fontSize = 11.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
+                        is ProbeState.Done -> Text(
+                            p.result.ip,
+                            color = colors.text,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
 
                         is ProbeState.Failed -> Text(
                             "探测失败 · 点击重试",
@@ -528,66 +532,67 @@ fun DashboardPage(
                         )
                     }
                 }
+                val activeSub = subscriptions.find { it.id == activeSubscriptionId }
+                val quotaSubs = if (mixEnabled) {
+                    subscriptions.filter { it.id in mixSubscriptionIds }
+                } else {
+                    listOfNotNull(activeSub)
+                }
+                val pool = remember(quotaSubs) { quotaSubs.sumOf { it.nodes.size } }
+                val used = quotaSubs.sumOf { it.uploadBytes + it.downloadBytes }
+                val totalBytes = quotaSubs.sumOf { it.totalBytes }
+                val label = when {
+                    mixEnabled && quotaSubs.isNotEmpty() -> "Mix · ${quotaSubs.size} 订阅"
+                    activeSub != null -> activeSub.name
+                    else -> "未添加"
+                }
                 InstrumentCard(
                     caption = "订阅",
                     onClick = { onOpenTab(MainTab.Subscriptions) },
                     modifier = Modifier.weight(1f),
+                    secondary = {
+                        if (totalBytes > 0) {
+                            val fraction = (used.toFloat() / totalBytes).coerceIn(0f, 1f)
+                            val barColor = when {
+                                fraction >= 0.9f -> colors.danger
+                                fraction >= 0.7f -> colors.warning
+                                else -> colors.primary
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(5.dp)
+                                    .clip(RoundedCornerShape(50))
+                                    .background(colors.bgDeep),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth(fraction)
+                                        .height(5.dp)
+                                        .clip(RoundedCornerShape(50))
+                                        .background(barColor),
+                                )
+                            }
+                            Spacer(Modifier.height(4.dp))
+                        }
+                        Text(
+                            "$pool 节点" + if (totalBytes > 0) {
+                                " · ${Libbox.formatBytes(used)} / ${Libbox.formatBytes(totalBytes)}"
+                            } else {
+                                ""
+                            },
+                            color = colors.textTertiary,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
                 ) {
-                    val activeSub = subscriptions.find { it.id == activeSubscriptionId }
-                    val quotaSubs = if (mixEnabled) {
-                        subscriptions.filter { it.id in mixSubscriptionIds }
-                    } else {
-                        listOfNotNull(activeSub)
-                    }
-                    val pool = remember(quotaSubs) { quotaSubs.sumOf { it.nodes.size } }
-                    val used = quotaSubs.sumOf { it.uploadBytes + it.downloadBytes }
-                    val totalBytes = quotaSubs.sumOf { it.totalBytes }
-                    val label = when {
-                        mixEnabled && quotaSubs.isNotEmpty() -> "Mix · ${quotaSubs.size} 订阅"
-                        activeSub != null -> activeSub.name
-                        else -> "未添加"
-                    }
                     Text(
                         label,
                         color = colors.text,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    if (totalBytes > 0) {
-                        val fraction = (used.toFloat() / totalBytes).coerceIn(0f, 1f)
-                        val barColor = when {
-                            fraction >= 0.9f -> colors.danger
-                            fraction >= 0.7f -> colors.warning
-                            else -> colors.primary
-                        }
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(5.dp)
-                                .clip(RoundedCornerShape(50))
-                                .background(colors.bgDeep),
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth(fraction)
-                                    .height(5.dp)
-                                    .clip(RoundedCornerShape(50))
-                                    .background(barColor),
-                            )
-                        }
-                        Spacer(Modifier.height(5.dp))
-                    }
-                    Text(
-                        "$pool 节点" + if (totalBytes > 0) {
-                            " · ${Libbox.formatBytes(used)} / ${Libbox.formatBytes(totalBytes)}"
-                        } else {
-                            ""
-                        },
-                        color = colors.textTertiary,
-                        fontSize = 11.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -654,6 +659,7 @@ private fun InstrumentCard(
     caption: String,
     onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    secondary: @Composable () -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     val colors = LocalInterstellarColors.current
@@ -671,8 +677,17 @@ private fun InstrumentCard(
             fontWeight = FontWeight.Medium,
             letterSpacing = 1.sp,
         )
-        Spacer(Modifier.height(6.dp))
-        content()
+        Spacer(Modifier.height(4.dp))
+        // 主要内容在剩余空间垂直居中, 次要内容贴底
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            contentAlignment = Alignment.Center,
+        ) {
+            content()
+        }
+        secondary()
     }
 }
 
