@@ -55,7 +55,13 @@ jobs:
       - name: Build sing-box core (libbox.aar)
         if: steps.libbox.outputs.cache-hit != 'true'
         run: |
-          yes | sdkmanager --install \
+          # runner 镜像未把 sdkmanager 加进 PATH, 从 cmdline-tools 目录解析
+          SDKMANAGER="$(ls -d "${ANDROID_HOME}"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | sort | tail -1)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::error::sdkmanager not found under \$ANDROID_HOME/cmdline-tools"
+            exit 1
+          fi
+          yes | "$SDKMANAGER" --install \
             "ndk;${NDK_VERSION}" \
             "platforms;android-24" \
             "platforms;android-21" > /dev/null
