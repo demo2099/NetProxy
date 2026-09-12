@@ -275,21 +275,31 @@ fun DashboardPage(
 
             Spacer(Modifier.height(12.dp))
 
-            // ── 快速控制：路由模式（规则 / 全局 / 直连）+ 代理内核
+            // ── 快速控制：路由模式（规则 / 全局 / 直连）+ 代理内核，标题与段控同行
             val routingIndex = when (routingMode) {
                 "global" -> 1
                 "direct" -> 2
                 else -> 0
             }
-            Column(modifier = Modifier.fillMaxWidth()) {
-                InstrumentCaption("路由")
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    "路由",
+                    color = colors.textTertiary,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 1.sp,
+                    modifier = Modifier.width(30.dp),
+                )
                 SegmentedControl(
                     items = listOf("规则", "全局", "直连"),
                     selected = routingIndex,
                     onSelect = { i ->
                         viewModel.setClashMode(listOf("rule", "global", "direct")[i])
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.weight(1f),
                 )
             }
 
@@ -301,8 +311,18 @@ fun DashboardPage(
                 com.interstellar.proxy.core.CoreKind.MIHOMO,
                 com.interstellar.proxy.core.CoreKind.XRAY,
             )
-            Column(modifier = Modifier.fillMaxWidth()) {
-                InstrumentCaption("内核")
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    "内核",
+                    color = colors.textTertiary,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 1.sp,
+                    modifier = Modifier.width(30.dp),
+                )
                 SegmentedControl(
                     items = coreOrder.map { it.displayName },
                     selected = coreOrder.indexOf(Settings.coreKind).coerceAtLeast(0),
@@ -318,7 +338,7 @@ fun DashboardPage(
                             viewModel.switchCore(picked)
                         }
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.weight(1f),
                 )
             }
 
