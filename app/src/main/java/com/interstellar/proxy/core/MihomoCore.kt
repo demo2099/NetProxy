@@ -107,13 +107,19 @@ class MihomoCore(
         // stale stored configs may still carry a tun block — strip it
         configFile.writeText(stripTun(config))
 
-        val process = SidecarProcess(context, "libmihomo.so", listOf("-d", workDir.absolutePath, "-f", configFile.absolutePath), workDir) { code ->
-            Log.e(TAG, "mihomo exited unexpectedly: $code")
-            AppLog.log("mihomo", "进程异常退出 code=$code")
-            activeTunFd = null
-            Holder.instance = null
-            host.onCoreRequestStop()
-        }
+        val process = SidecarProcess(
+            context,
+            "libmihomo.so",
+            listOf("-d", workDir.absolutePath, "-f", configFile.absolutePath),
+            workDir,
+            onExit = { code ->
+                Log.e(TAG, "mihomo exited unexpectedly: $code")
+                AppLog.log("mihomo", "进程异常退出 code=$code")
+                activeTunFd = null
+                Holder.instance = null
+                host.onCoreRequestStop()
+            },
+        )
         val spawnAtMs = System.currentTimeMillis()
         process.start()
         sidecar = process

@@ -48,6 +48,9 @@ object TProxyService {
 
     fun stop(): Boolean = runCatching { TProxyStopService() }.getOrDefault(false)
 
+    /** Cumulative [txPackets, txBytes, rxPackets, rxBytes] through the bridge. */
+    fun stats(): LongArray? = runCatching { TProxyGetStats() }.getOrNull()
+
     @JvmStatic
     private external fun TProxyStartService(configPath: String, fd: Int): Boolean
 

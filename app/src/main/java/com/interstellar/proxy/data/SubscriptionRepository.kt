@@ -204,12 +204,14 @@ object SubscriptionRepository {
         val content =
             if (coreKind == com.interstellar.proxy.core.CoreKind.MIHOMO) {
                 com.interstellar.proxy.data.config.MihomoConfigBuilder.build(nodes, opts)
+            } else if (coreKind == com.interstellar.proxy.core.CoreKind.XRAY) {
+                com.interstellar.proxy.data.config.XrayConfigBuilder.build(nodes, opts)
             } else {
                 ConfigBuilder.build(nodes, opts)
             }
         return try {
-            // libbox only validates sing-box JSON; mihomo self-validates at spawn
-            if (coreKind != com.interstellar.proxy.core.CoreKind.MIHOMO) {
+            // libbox only validates sing-box JSON; sidecars self-validate at spawn
+            if (coreKind == com.interstellar.proxy.core.CoreKind.SINGBOX) {
                 Libbox.checkConfig(content)
             }
             ConfigStore.writeActiveConfig(content)

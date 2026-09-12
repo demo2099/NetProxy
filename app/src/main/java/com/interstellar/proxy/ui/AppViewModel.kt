@@ -415,12 +415,41 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (mihomoJob?.isActive == true) return
         mihomoJob = viewModelScope.launch(Dispatchers.IO) {
             while (isActive) {
-                if (Settings.coreKind == CoreKind.MIHOMO) {
-                    runCatching { pollMihomoOnce() }
+                when (Settings.coreKind) {
+                    CoreKind.MIHOMO -> runCatching { pollMihomoOnce() }
+                    CoreKind.XRAY -> runCatching { pollXrayOnce() }
+                    CoreKind.SINGBOX -> Unit
                 }
                 delay(2000)
             }
         }
+    }
+
+    /**
+     * Xray has no control API — the live bridge only carries the hev TUN
+     * counters (traffic card) and promotes Starting → Started once the
+     * inbound is up; node/delay state stays pool-driven.
+     */
+    private fun pollXrayOnce() {
+        if (probing) return
+        if (_status.value == Status.Starting) markStarted()
+        if (!com.interstellar.proxy.core.TProxyService.running) return
+        // hev counters: [txPackets, txBytes, rxPackets, rxBytes]
+        val stats = com.interstellar.proxy.core.TProxyService.stats() ?: return
+        val tx = stats.getOrElse(1) { 0L }
+        val rx = stats.getOrElse(3) { 0L }
+        if (mihomoLastDown >= 0 && rx >= mihomoLastDown && tx >= mihomoLastUp) {
+            _speed.value = SpeedState(
+                uplinkPerSecond = (tx - mihomoLastUp) / 2,
+                downlinkPerSecond = (rx - mihomoLastDown) / 2,
+                uplinkTotal = tx,
+                downlinkTotal = rx,
+            )
+            _history.value =
+                (_history.value + ((rx - mihomoLastDown) / 2 to (tx - mihomoLastUp) / 2)).takeLast(60)
+        }
+        mihomoLastDown = rx
+        mihomoLastUp = tx
     }
 
     private suspend fun pollMihomoOnce() {
@@ -483,7 +512,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun connect() {
         // libbox command socket only exists for the sing-box engine
-        if (Settings.coreKind != CoreKind.MIHOMO) commandClient.connect()
+        if (Settings.coreKind == CoreKind.SINGBOX) commandClient.connect()
         startMihomoBridge()
         registerStoppedReceiver()
         // poll-reconnect: the box may start/stop at any time, and a failed
@@ -493,7 +522,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             while (isActive) {
                 delay(2000)
                 if (_status.value == Status.Starting || _status.value == Status.Stopped) {
-                    if (Settings.coreKind != CoreKind.MIHOMO) commandClient.connect()
+                    if (Settings.coreKind == CoreKind.SINGBOX) commandClient.connect()
                 }
             }
         }
@@ -598,7 +627,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private fun applySocketDrop() {
         // connection errors from the (sing-box only) command client must not
         // tear down a healthy sidecar engine
-        if (Settings.coreKind == CoreKind.MIHOMO) return
+        if (Settings.coreKind != CoreKind.SINGBOX) return
         when (_status.value) {
             Status.Stopping -> markStopped()
             Status.Started -> armStartingWatchdog(SOCKET_DROP_TIMEOUT_MS)
@@ -668,7 +697,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         com.interstellar.proxy.core.MihomoCore.Holder.instance?.refreshFromConfigStore()
                     }
 
-                    else -> runCatching { CommandTarget.standaloneClient().serviceReload() }
+                    CoreKind.XRAY -> runCatching {
+                        com.interstellar.proxy.core.XrayCore.Holder.instance?.restartFromConfigStore()
+                    }
+
+                    CoreKind.SINGBOX -> runCatching { CommandTarget.standaloneClient().serviceReload() }
                 }
             }
         }
@@ -747,7 +780,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         runCatching { pollMihomoOnce() }
                     }
 
-                    else -> runCatching {
+                    CoreKind.XRAY -> {
+                        // Xray has no selector — regenerate + respawn ("重启生效")
+                        SubscriptionRepository.regenerateActiveConfig()
+                        runCatching {
+                            com.interstellar.proxy.core.XrayCore.Holder.instance?.restartFromConfigStore()
+                        }.onSuccess {
+                            _message.value = "已重启 Xray 生效"
+                        }
+                    }
+
+                    CoreKind.SINGBOX -> runCatching {
                         CommandTarget.standaloneClient().selectOutbound(groupTag, itemTag)
                     }.onFailure {
                         _message.value = "切换失败: ${it.message}"
@@ -841,9 +884,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                             }
                         }
 
-                        else -> runCatching { CommandTarget.standaloneClient().urlTest(groupTag) }
+                        // no API — TCP ping the pool directly, no core involved
+                        CoreKind.XRAY -> tcpPingPool()
+
+                        CoreKind.SINGBOX -> runCatching { CommandTarget.standaloneClient().urlTest(groupTag) }
                     }
-                    delay(12_000)
+                    if (Settings.coreKind != CoreKind.XRAY) delay(12_000)
                 } else {
                     runDisconnectedUrlTest()
                 }
@@ -876,6 +922,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
      * 未连接. Restores the previous config afterwards.
      */
     private suspend fun runDisconnectedUrlTest() {
+        // Xray delay = direct TCP pings; spinning a headless core buys nothing
+        if (Settings.coreKind == CoreKind.XRAY) {
+            tcpPingPool()
+            return
+        }
         probing = true
         probeSocketUp = false
         val previous = ConfigStore.readActiveConfig()

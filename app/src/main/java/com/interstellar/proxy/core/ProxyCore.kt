@@ -90,9 +90,6 @@ object CoreEngines {
         when (kind) {
             CoreKind.SINGBOX -> SingBoxCore(platformInterface, host)
             CoreKind.MIHOMO -> MihomoCore(com.interstellar.proxy.InterstellarApplication.application, host)
-            CoreKind.XRAY -> {
-                android.util.Log.w("CoreEngines", "core xray not available yet, using sing-box")
-                SingBoxCore(platformInterface, host)
-            }
+            CoreKind.XRAY -> XrayCore(com.interstellar.proxy.InterstellarApplication.application, host)
         }
 }

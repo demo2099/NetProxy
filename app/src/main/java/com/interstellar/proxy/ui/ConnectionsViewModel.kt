@@ -106,19 +106,24 @@ class ConnectionsViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun connect() {
-        if (Settings.coreKind == CoreKind.MIHOMO) {
-            connectMihomo()
-        } else {
-            client.connect()
+        when (Settings.coreKind) {
+            CoreKind.MIHOMO -> connectMihomo()
+
+            // Xray has no connections API — the page shows its empty state
+            CoreKind.XRAY -> Unit
+
+            CoreKind.SINGBOX -> client.connect()
         }
         pollJob?.cancel()
         pollJob = viewModelScope.launch {
             while (isActive) {
                 delay(1500)
-                if (Settings.coreKind == CoreKind.MIHOMO) {
-                    pollMihomoOnce()
-                } else if (!_connected.value) {
-                    client.connect()
+                when (Settings.coreKind) {
+                    CoreKind.MIHOMO -> pollMihomoOnce()
+
+                    CoreKind.XRAY -> Unit
+
+                    CoreKind.SINGBOX -> if (!_connected.value) client.connect()
                 }
             }
         }
@@ -182,26 +187,30 @@ class ConnectionsViewModel(application: Application) : AndroidViewModel(applicat
     }.getOrNull()
 
     fun closeConnection(id: String) {
-        if (Settings.coreKind == CoreKind.MIHOMO) {
-            viewModelScope.launch {
+        when (Settings.coreKind) {
+            CoreKind.MIHOMO -> viewModelScope.launch {
                 runCatching { clashApi.deleteConnection(id) }
             }
-            return
-        }
-        viewModelScope.launch {
-            runCatching { CommandTarget.standaloneClient().closeConnection(id) }
+
+            CoreKind.XRAY -> Unit
+
+            CoreKind.SINGBOX -> viewModelScope.launch {
+                runCatching { CommandTarget.standaloneClient().closeConnection(id) }
+            }
         }
     }
 
     fun closeAll() {
-        if (Settings.coreKind == CoreKind.MIHOMO) {
-            viewModelScope.launch {
+        when (Settings.coreKind) {
+            CoreKind.MIHOMO -> viewModelScope.launch {
                 runCatching { clashApi.closeAllConnections() }
             }
-            return
-        }
-        viewModelScope.launch {
-            runCatching { CommandTarget.standaloneClient().closeConnections() }
+
+            CoreKind.XRAY -> Unit
+
+            CoreKind.SINGBOX -> viewModelScope.launch {
+                runCatching { CommandTarget.standaloneClient().closeConnections() }
+            }
         }
     }
 }

@@ -28,6 +28,12 @@ MIHOMO_VERSION = "v1.19.30"
 MIHOMO_TAG = "cmfa"  # excludes the root-only android-rules path
 HEV_VERSION = "2.17.1"
 HEV_PKG = "com/interstellar/proxy/core"
+XRAY_VERSION = "v26.3.27"
+XRAY_ZIPS = {  # recent Xray releases dropped 32-bit android — 2 ABIs only
+    "arm64-v8a": "Xray-android-arm64-v8a.zip",
+    "x86_64": "Xray-android-amd64.zip",
+}
+XRAY_MIRRORS = ["", "https://ghfast.top/", "https://gh-proxy.com/", "https://ghproxy.net/"]
 
 ROOT = Path(__file__).resolve().parent.parent
 JNILIBS = ROOT / "app" / "src" / "main" / "jniLibs"
@@ -168,9 +174,74 @@ def build_hev() -> None:
         print(f"hev {abi} ok")
 
 
+def fetch_xray() -> None:
+    """Official Xray android zips (pinned) → jniLibs/libxray.so + geoip.dat.
+
+    The zip's `xray` executable is renamed libxray.so (the only W^X-legal
+    exec path); its bundled geoip.dat lands in assets (geosite.dat is already
+    shared with mihomo). Downloads verify against the official .dgst SHA256;
+    flaky links retry through mirrors.
+    """
+    import hashlib
+    import json
+    import urllib.request
+    import zipfile
+
+    if all((JNILIBS / abi / "libxray.so").is_file() for abi in XRAY_ZIPS):
+        print("xray binaries present, skipping download")
+        return
+
+    dl = BUILD / "xray-dl"
+    dl.mkdir(parents=True, exist_ok=True)
+    base = f"https://github.com/XTLS/Xray-core/releases/download/{XRAY_VERSION}"
+
+    def fetch(name: str) -> Path:
+        dest = dl / name
+        for mirror in XRAY_MIRRORS:
+            url = mirror + f"{base}/{name}"
+            try:
+                subprocess.run(["curl", "-fsSL", "--retry", "3", "--retry-delay", "2",
+                                "--max-time", "420", "-C", "-", "-o", str(dest), url],
+                               check=True)
+            except subprocess.CalledProcessError:
+                continue  # try next mirror (resume keeps partial data)
+            dgst = dl / (name + ".dgst")
+            try:
+                subprocess.run(["curl", "-fsSL", "--max-time", "60", "-o", str(dgst),
+                                f"{base}/{name}.dgst"], check=True)
+                want = [l.split("= ", 1)[1].strip() for l in
+                        dgst.read_text().splitlines() if l.startswith("SHA2-256")][0]
+                got = hashlib.sha256(dest.read_bytes()).hexdigest()
+                if got == want:
+                    return dest
+                print(f"!! {name} sha mismatch via {mirror or 'direct'}")
+            except Exception as e:
+                print(f"!! {name} dgst verify failed via {mirror or 'direct'}: {e}")
+        raise SystemExit(f"could not fetch a verified {name}")
+
+    zips = {abi: fetch(name) for abi, name in XRAY_ZIPS.items()}
+    for abi, path in zips.items():
+        out = JNILIBS / abi
+        out.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(path) as z:
+            with z.open("xray") as src, open(out / "libxray.so", "wb") as dst:
+                shutil.copyfileobj(src, dst)
+        print(f"xray {abi} ok")
+    # geoip.dat for Xray routing rules (mihomo uses geoip.metadb instead)
+    assets = ROOT / "app" / "src" / "main" / "assets" / "geodata"
+    assets.mkdir(parents=True, exist_ok=True)
+    geoip = assets / "geoip.dat"
+    if not geoip.is_file():
+        with zipfile.ZipFile(zips["arm64-v8a"]) as z:
+            with z.open("geoip.dat") as src, open(geoip, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+        print(f"geoip.dat -> {geoip}")
+
+
 def main() -> None:
     build_mihomo()
     build_hev()
+    fetch_xray()
 
 
 if __name__ == "__main__":

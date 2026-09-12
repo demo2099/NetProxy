@@ -15,6 +15,7 @@ class SidecarProcess(
     private val args: List<String>,
     private val workDir: File,
     private val onExit: (Int) -> Unit,
+    private val env: Map<String, String> = emptyMap(),
 ) {
     private val executable = File(context.applicationInfo.nativeLibraryDir, soname)
     @Volatile
@@ -36,6 +37,7 @@ class SidecarProcess(
         })
             .directory(workDir)
             .redirectErrorStream(true)
+            .apply { environment().putAll(env) }
             .start()
         process = proc
         // pump output to the rotating log; thread death == process exit

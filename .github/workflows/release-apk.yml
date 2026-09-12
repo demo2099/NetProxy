@@ -57,7 +57,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: app/src/main/jniLibs
-          key: sidecar-v2-mihomo-v1.19.30-cmfa-hev-2.17.1
+          key: sidecar-v2-mihomo-v1.19.30-cmfa-hev-2.17.1-xray-v26.3.27
 
       # mihomo 官方 android 二进制的 TUN 会读 packages.xml(root-only) fatal,
       # 必须 cmfa 标签自编译; hev 为 TUN→socks5 JNI 桥(ndk-build)

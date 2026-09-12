@@ -28,7 +28,13 @@ class UpdateWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                         com.interstellar.proxy.core.MihomoCore.Holder.instance?.refreshFromConfigStore()
                     }
 
-                else -> runCatching { CommandTarget.standaloneClient().serviceReload() }
+                com.interstellar.proxy.core.CoreKind.XRAY ->
+                    runCatching {
+                        com.interstellar.proxy.core.XrayCore.Holder.instance?.restartFromConfigStore()
+                    }
+
+                com.interstellar.proxy.core.CoreKind.SINGBOX ->
+                    runCatching { CommandTarget.standaloneClient().serviceReload() }
             }
         }
         return Result.success()
