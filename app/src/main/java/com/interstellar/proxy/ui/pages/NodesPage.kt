@@ -484,7 +484,7 @@ private fun NodeGridCell(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(92.dp)
+            .height(104.dp)
             .clip(RoundedCornerShape(14.dp))
             .then(
                 if (selected) {
@@ -504,7 +504,7 @@ private fun NodeGridCell(
         Column(
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .padding(end = 4.dp, bottom = 24.dp),
+                .padding(end = 4.dp, bottom = 40.dp),
         ) {
             Text(
                 item.label,
@@ -525,9 +525,8 @@ private fun NodeGridCell(
                 )
             }
         }
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+        // 协议信息独占一行（全宽），延迟徽章另起一行靠右
+        Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .fillMaxWidth()
@@ -541,12 +540,13 @@ private fun NodeGridCell(
                     fontFamily = FontFamily.Monospace,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
                 )
-            } else {
-                Spacer(Modifier.weight(1f))
+                Spacer(Modifier.height(5.dp))
             }
-            DelayBadge(delay)
+            DelayBadge(
+                delay = delay,
+                modifier = Modifier.align(Alignment.End),
+            )
         }
     }
 }
