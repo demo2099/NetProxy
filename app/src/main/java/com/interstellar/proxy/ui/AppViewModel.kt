@@ -891,9 +891,21 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         // no API — TCP ping the pool directly, no core involved
                         CoreKind.XRAY -> tcpPingPool()
 
-                        CoreKind.SINGBOX -> runCatching { CommandTarget.standaloneClient().urlTest(groupTag) }
+                        CoreKind.SINGBOX -> {
+                            val ok = runCatching { CommandTarget.standaloneClient().urlTest(groupTag) }.isSuccess
+                            // completion is reported by the outbounds stream
+                            // (updateOutbounds counts done/total and clears the
+                            // epoch); a fixed 12s used to kill the counter
+                            // mid-run on big pools — wait it out with a cap
+                            if (ok) {
+                                val deadline = System.currentTimeMillis() + 90_000
+                                while (System.currentTimeMillis() < deadline && testStartEpoch > 0) {
+                                    delay(500)
+                                }
+                            }
+                        }
                     }
-                    if (Settings.coreKind != CoreKind.XRAY) delay(12_000)
+                    if (Settings.coreKind == CoreKind.MIHOMO) delay(12_000)
                 } else {
                     runDisconnectedUrlTest()
                 }
