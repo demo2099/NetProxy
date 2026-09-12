@@ -75,7 +75,7 @@ object NetProbe {
             .build()
     }
 
-    private val proxiedClient: OkHttpClient by lazy {
+    private val proxiedHttpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .connectTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .readTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -84,9 +84,37 @@ object NetProbe {
             .build()
     }
 
-    /** The command socket exists exactly while the core runs. */
-    private fun coreRunning(): Boolean =
-        File(InterstellarApplication.application.filesDir, "command.sock").exists()
+    /** Xray's local inbound is socks-only (no mixed http). */
+    private val proxiedSocksClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .readTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .proxy(Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", MIXED_PORT)))
+            .build()
+    }
+
+    private fun proxiedClient(): OkHttpClient =
+        if (com.interstellar.proxy.data.Settings.coreKind == com.interstellar.proxy.core.CoreKind.XRAY) {
+            proxiedSocksClient
+        } else {
+            proxiedHttpClient
+        }
+
+    /**
+     * sing-box's command socket exists exactly while it runs; the sidecar
+     * cores expose their Holder handles instead.
+     */
+    private fun coreRunning(): Boolean = when (com.interstellar.proxy.data.Settings.coreKind) {
+        com.interstellar.proxy.core.CoreKind.SINGBOX ->
+            File(InterstellarApplication.application.filesDir, "command.sock").exists()
+
+        com.interstellar.proxy.core.CoreKind.MIHOMO ->
+            com.interstellar.proxy.core.MihomoCore.Holder.instance != null
+
+        com.interstellar.proxy.core.CoreKind.XRAY ->
+            com.interstellar.proxy.core.XrayCore.Holder.instance != null
+    }
 
     /**
      * Race all endpoints on the given path; first valid answer wins.
@@ -108,7 +136,7 @@ object NetProbe {
                         .url(endpoint.url)
                         .header("User-Agent", "curl/8.9.1")
                         .build()
-                    (if (viaProxy) proxiedClient else client).newCall(request).execute().use { response ->
+                    (if (viaProxy) proxiedClient() else client).newCall(request).execute().use { response ->
                         if (!response.isSuccessful) error("HTTP ${response.code}")
                         val body = response.body!!.string()
                         val (ip, country) = endpoint.parse(body)
