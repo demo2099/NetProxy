@@ -24,7 +24,7 @@ data class SimpleRouteRule(
         DIRECT("直连"),
 
         @SerialName("proxy")
-        PROXY("强制代理"),
+        PROXY("代理"),
 
         @SerialName("node")
         NODE("指定节点"),

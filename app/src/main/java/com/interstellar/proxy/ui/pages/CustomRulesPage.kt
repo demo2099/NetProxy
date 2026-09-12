@@ -50,7 +50,7 @@ import com.interstellar.proxy.ui.components.pressableClick
 import com.interstellar.proxy.ui.theme.LocalInterstellarColors
 
 /**
- * 手动分流规则(手机简版): 域名 → 直连 / 强制代理 / 指定节点。
+ * 手动分流规则(手机简版): 域名 → 直连 / 代理 / 指定节点。
  * 规则优先级最高,先于大陆绕过等内置规则。
  */
 @Composable

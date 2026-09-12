@@ -281,9 +281,9 @@ fun DashboardPage(
 
             // ── 状态行: 只报状态, 点击进入分流设置修改 ──
             val routingLabel = when (routingMode) {
-                "global" -> "强制代理"
+                "global" -> "代理"
                 "direct" -> "直连"
-                else -> "智能分流"
+                else -> "规则"
             }
             ProxyStatusRow(label = "路由", value = routingLabel) {
                 onOpenSubPage(SettingsSubPage.Proxy)

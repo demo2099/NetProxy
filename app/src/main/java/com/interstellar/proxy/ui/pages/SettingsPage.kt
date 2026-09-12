@@ -144,15 +144,15 @@ fun SettingsPage(onOpen: (SettingsSubPage) -> Unit, onProxyChanged: () -> Unit =
                 title = "分流设置",
                 desc = "路由模式 / 应用分流(白名单·黑名单) / 分流细则",
                 value = when (Settings.outboundMode) {
-                    com.interstellar.proxy.data.config.ConfigBuilder.OutboundMode.GLOBAL -> "强制代理"
+                    com.interstellar.proxy.data.config.ConfigBuilder.OutboundMode.GLOBAL -> "代理"
                     com.interstellar.proxy.data.config.ConfigBuilder.OutboundMode.DIRECT -> "直连"
-                    else -> "智能分流"
+                    else -> "规则"
                 },
                 onClick = { onOpen(SettingsSubPage.Proxy) },
             )
             PrefNavRow(
                 title = "分流规则",
-                desc = "域名 → 直连 / 强制代理 / 指定节点",
+                desc = "域名 → 直连 / 代理 / 指定节点",
                 value = when {
                     ruleTotal == 0 -> "未设置"
                     else -> "$ruleOn 条启用"
@@ -456,7 +456,7 @@ private fun AccentDot(preset: Accents.Preset, selected: Boolean, modifier: Modif
 }
 
 /**
- * 分流专用设置页: 路由模式 + 应用分流(白/黑名单) + 智能分流细则 + 规则入口。
+ * 分流专用设置页: 路由模式 + 应用分流(白/黑名单) + 规则细则 + 规则入口。
  * 首页的状态行跳到这里做实际修改(首页只报状态)。
  */
 @Composable
@@ -476,7 +476,7 @@ fun ProxySettingsPage(viewModel: com.interstellar.proxy.ui.AppViewModel, onOpen:
         // ---- 路由模式 ----
         PrefSectionLabel("路由模式")
         GlassCard(modifier = Modifier.fillMaxWidth(), contentPadding = 6.dp) {
-            val modes = listOf("rule" to "智能分流", "global" to "强制代理", "direct" to "直连")
+            val modes = listOf("rule" to "规则", "global" to "代理", "direct" to "直连")
             PrefSegRow(
                 title = "模式",
                 desc = "被代理流量的目的地走向",
@@ -486,7 +486,7 @@ fun ProxySettingsPage(viewModel: com.interstellar.proxy.ui.AppViewModel, onOpen:
                 onSelect = { i -> viewModel.setClashMode(modes[i].first) },
             )
         }
-        IosSectionFooter("智能分流按目的地规则(大陆/局域网/自定义)分流;强制代理全部经节点;直连保持 VPN 但不代理。")
+        IosSectionFooter("规则模式按目的地规则(大陆/局域网/自定义)分流;代理模式全部经节点;直连保持 VPN 但不代理。")
 
         Spacer(Modifier.height(22.dp))
 
@@ -518,8 +518,8 @@ fun ProxySettingsPage(viewModel: com.interstellar.proxy.ui.AppViewModel, onOpen:
 
         Spacer(Modifier.height(22.dp))
 
-        // ---- 智能分流细则 ----
-        PrefSectionLabel("智能分流细则")
+        // ---- 规则细则 ----
+        PrefSectionLabel("规则细则")
         GlassCard(modifier = Modifier.fillMaxWidth(), contentPadding = 6.dp) {
             var bypassLan by remember { mutableStateOf(Settings.bypassLanEnabled) }
             var bypassCn by remember { mutableStateOf(Settings.bypassCnEnabled) }
@@ -537,7 +537,7 @@ fun ProxySettingsPage(viewModel: com.interstellar.proxy.ui.AppViewModel, onOpen:
             )
             PrefToggleRow(
                 title = "绕过大陆网站",
-                desc = "大陆域名与 IP 直连不走代理(仅智能分流)",
+                desc = "大陆域名与 IP 直连不走代理(仅规则模式)",
                 checked = bypassCn,
                 onChange = {
                     bypassCn = it
@@ -576,7 +576,7 @@ fun ProxySettingsPage(viewModel: com.interstellar.proxy.ui.AppViewModel, onOpen:
             val ruleOn = com.interstellar.proxy.data.SimpleRulesStore.rules.count { it.enabled }
             PrefNavRow(
                 title = "分流规则",
-                desc = "域名 → 直连 / 强制代理 / 指定节点",
+                desc = "域名 → 直连 / 代理 / 指定节点",
                 value = if (ruleOn == 0) "未设置" else "$ruleOn 条启用",
                 onClick = { onOpen(SettingsSubPage.Rules) },
             )
