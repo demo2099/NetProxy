@@ -259,6 +259,7 @@ fun DashboardPage(
                 )
             } else {
                 Spacer(Modifier.height(2.dp))
+                // 与运行中的协议行同款内边距,两态行高一致,布局零漂移
                 Text(
                     when (status) {
                         Status.Starting -> "正在建立隧道…"
@@ -267,6 +268,8 @@ fun DashboardPage(
                     },
                     color = colors.textTertiary,
                     fontSize = 13.sp,
+                    maxLines = 1,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                 )
             }
 
