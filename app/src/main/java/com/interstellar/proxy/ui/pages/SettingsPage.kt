@@ -65,7 +65,7 @@ fun settingsSubPageTitle(page: SettingsSubPage): String = when (page) {
     SettingsSubPage.PerApp -> "分应用代理"
     SettingsSubPage.Connections -> "监控"
     SettingsSubPage.Logs -> "系统日志"
-    SettingsSubPage.Rules -> "分流规则"
+    SettingsSubPage.Rules -> "路由规则"
     SettingsSubPage.Dns -> "DNS 解析"
     SettingsSubPage.Proxy -> "路由设置"
 }

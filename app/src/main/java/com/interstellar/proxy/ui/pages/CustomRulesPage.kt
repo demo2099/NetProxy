@@ -39,7 +39,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.interstellar.proxy.data.SimpleRouteRule
 import com.interstellar.proxy.ui.AppViewModel
+import com.interstellar.proxy.ui.components.GlassCard
 import com.interstellar.proxy.ui.components.GlassButton
+import com.interstellar.proxy.ui.components.GlassCard
 import com.interstellar.proxy.ui.components.GlassButtonStyle
 import com.interstellar.proxy.ui.components.IosHairline
 import com.interstellar.proxy.ui.components.IosSectionFooter
@@ -208,108 +210,113 @@ private fun RuleEditorSheet(
     LaunchedEffect(Unit) { nodes = viewModel.nodePickerEntries() }
     val actions = SimpleRouteRule.Action.entries
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp)
-            .imePadding(),
-    ) {
-        Spacer(Modifier.height(10.dp))
-        IosSectionLabel(if (initial == null) "添加规则" else "编辑规则")
-        Spacer(Modifier.height(10.dp))
-
-        OutlinedTextField(
-            value = domain,
-            onValueChange = { domain = it.trim() },
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        GlassCard(
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("example.com", color = colors.textTertiary, fontSize = 13.sp) },
-            singleLine = true,
-            shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = colors.text,
-                unfocusedTextColor = colors.text,
-                focusedBorderColor = colors.primaryBorder,
-                unfocusedBorderColor = colors.border,
-                cursorColor = colors.primary,
-            ),
-        )
+            contentPadding = 16.dp,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .imePadding(),
+            ) {
+                IosSectionLabel(if (initial == null) "添加规则" else "编辑规则")
+                Spacer(Modifier.height(12.dp))
 
-        Spacer(Modifier.height(14.dp))
+                OutlinedTextField(
+                    value = domain,
+                    onValueChange = { domain = it.trim() },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("example.com", color = colors.textTertiary, fontSize = 13.sp) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = colors.text,
+                        unfocusedTextColor = colors.text,
+                        focusedBorderColor = colors.primaryBorder,
+                        unfocusedBorderColor = colors.border,
+                        cursorColor = colors.primary,
+                    ),
+                )
 
-        SegmentedControl(
-            items = actions.map { it.label },
-            selected = actionIndex,
-            onSelect = { actionIndex = it },
-            modifier = Modifier.fillMaxWidth(),
-            controlHeight = 40.dp,
-        )
+                Spacer(Modifier.height(14.dp))
 
-        if (actions[actionIndex] == SimpleRouteRule.Action.NODE) {
-            Spacer(Modifier.height(10.dp))
-            if (nodes.isEmpty()) {
-                Text("当前节点池为空", color = colors.textTertiary, fontSize = 12.sp)
-            } else {
-                LazyColumn(modifier = Modifier.height(220.dp)) {
-                    items(nodes, key = { it.first }) { (id, tag, _) ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .pressableClick { nodeId = id }
-                                .padding(vertical = 8.dp),
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(16.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        if (nodeId == id) colors.primary else colors.bgDeep,
-                                    ),
-                            )
-                            Spacer(Modifier.width(10.dp))
-                            Text(
-                                tag,
-                                color = colors.text,
-                                fontSize = 13.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                SegmentedControl(
+                    items = actions.map { it.label },
+                    selected = actionIndex,
+                    onSelect = { actionIndex = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    controlHeight = 40.dp,
+                )
+
+                if (actions[actionIndex] == SimpleRouteRule.Action.NODE) {
+                    Spacer(Modifier.height(10.dp))
+                    if (nodes.isEmpty()) {
+                        Text("当前节点池为空", color = colors.textTertiary, fontSize = 12.sp)
+                    } else {
+                        Text("选择节点", color = colors.textTertiary, fontSize = 11.sp)
+                        Spacer(Modifier.height(4.dp))
+                        LazyColumn(modifier = Modifier.height(200.dp)) {
+                            items(nodes, key = { it.first }) { (id, tag, _) ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .pressableClick { nodeId = id }
+                                        .padding(vertical = 7.dp),
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(14.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                if (nodeId == id) colors.primary else colors.bgDeep,
+                                            ),
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                    Text(
+                                        tag,
+                                        color = colors.text,
+                                        fontSize = 13.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
                         }
                     }
                 }
+
+                Spacer(Modifier.height(16.dp))
+
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    GlassButton(
+                        text = "取消",
+                        style = GlassButtonStyle.Secondary,
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                    )
+                    GlassButton(
+                        text = "保存",
+                        style = GlassButtonStyle.Primary,
+                        enabled = domain.isNotBlank() &&
+                            (actions[actionIndex] != SimpleRouteRule.Action.NODE || nodeId.isNotBlank()),
+                        onClick = {
+                            onSave(
+                                SimpleRouteRule(
+                                    id = initial?.id ?: com.interstellar.proxy.data.SimpleRulesStore.newId(),
+                                    domain = domain,
+                                    action = actions[actionIndex],
+                                    nodeId = nodeId.takeIf { it.isNotBlank() },
+                                    enabled = initial?.enabled ?: true,
+                                ),
+                            )
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
         }
-
-        Spacer(Modifier.height(16.dp))
-
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            GlassButton(
-                text = "取消",
-                style = GlassButtonStyle.Secondary,
-                onClick = onDismiss,
-                modifier = Modifier.weight(1f),
-            )
-            GlassButton(
-                text = "保存",
-                style = GlassButtonStyle.Primary,
-                enabled = domain.isNotBlank() &&
-                    (actions[actionIndex] != SimpleRouteRule.Action.NODE || nodeId.isNotBlank()),
-                onClick = {
-                    onSave(
-                        SimpleRouteRule(
-                            id = initial?.id ?: com.interstellar.proxy.data.SimpleRulesStore.newId(),
-                            domain = domain,
-                            action = actions[actionIndex],
-                            nodeId = nodeId.takeIf { it.isNotBlank() },
-                            enabled = initial?.enabled ?: true,
-                        ),
-                    )
-                },
-                modifier = Modifier.weight(1f),
-            )
-        }
-
-        Spacer(Modifier.height(24.dp))
     }
 }
