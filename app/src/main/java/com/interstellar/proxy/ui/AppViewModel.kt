@@ -109,6 +109,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _groups = MutableStateFlow<List<CoreGroup>>(emptyList())
     val groups: StateFlow<List<CoreGroup>> = _groups
 
+    /** Observable engine kind — drives the dashboard core segmented control. */
+    private val _coreKind = MutableStateFlow(Settings.coreKind)
+    val coreKind: StateFlow<CoreKind> = _coreKind
+
     /** tag → latest url-test delay (pushed via the outbounds stream). */
     private val _delays = MutableStateFlow<Map<String, Int>>(emptyMap())
     val delays: StateFlow<Map<String, Int>> = _delays
@@ -609,6 +613,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
             com.interstellar.proxy.core.AppLog.log("core", "切换内核 → ${kind.displayName}")
             Settings.coreKind = kind
+            _coreKind.value = kind
             _groups.value = emptyList()
             _delays.value = emptyMap()
             mihomoLastDown = -1L

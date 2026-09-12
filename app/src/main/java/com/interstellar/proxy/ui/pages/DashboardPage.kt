@@ -104,6 +104,7 @@ fun DashboardPage(
     val connections by connectionsViewModel.connections.collectAsState()
     val history by viewModel.history.collectAsState()
     val routingMode by viewModel.routingMode.collectAsState()
+    val coreKind by viewModel.coreKind.collectAsState()
     val probe by viewModel.probe.collectAsState()
     val running = status == Status.Started
     val activeConnectionCount = connections.count { !it.closed }
@@ -326,7 +327,7 @@ fun DashboardPage(
                 )
                 SegmentedControl(
                     items = coreOrder.map { it.displayName },
-                    selected = coreOrder.indexOf(Settings.coreKind).coerceAtLeast(0),
+                    selected = coreOrder.indexOf(coreKind).coerceAtLeast(0),
                     onSelect = { i ->
                         val picked = coreOrder[i]
                         if (picked == com.interstellar.proxy.core.CoreKind.XRAY) {
