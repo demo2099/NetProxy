@@ -23,6 +23,11 @@ import com.interstellar.proxy.data.subscription.SubscriptionParser
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.OutboundGroup
 import io.nekohasekai.libbox.StatusMessage
+import com.interstellar.proxy.core.ClashApiClient
+import com.interstellar.proxy.core.CoreGroup
+import com.interstellar.proxy.core.CoreGroupItem
+import com.interstellar.proxy.core.CoreKind
+import com.interstellar.proxy.core.MihomoCore
 import com.interstellar.proxy.utils.CommandClient
 import com.interstellar.proxy.utils.CommandTarget
 import kotlinx.coroutines.Dispatchers
@@ -34,6 +39,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.security.SecureRandom
 
 data class SpeedState(
@@ -99,8 +106,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _routingMode = MutableStateFlow(Settings.outboundMode.name.lowercase())
     val routingMode: StateFlow<String> = _routingMode
 
-    private val _groups = MutableStateFlow<List<OutboundGroup>>(emptyList())
-    val groups: StateFlow<List<OutboundGroup>> = _groups
+    private val _groups = MutableStateFlow<List<CoreGroup>>(emptyList())
+    val groups: StateFlow<List<CoreGroup>> = _groups
 
     /** tag → latest url-test delay (pushed via the outbounds stream). */
     private val _delays = MutableStateFlow<Map<String, Int>>(emptyMap())
@@ -259,7 +266,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             override fun updateGroups(newGroups: MutableList<OutboundGroup>) {
-                _groups.value = newGroups.toList()
+                _groups.value = newGroups.map(::convertGroup)
                 refreshSplitRuleStatus()
             }
 
@@ -304,12 +311,99 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private fun normalizeRoutingMode(mode: String): String? =
         mode.lowercase().takeIf { it == "rule" || it == "global" || it == "direct" }
 
+    // ---- mihomo live bridge (Clash REST → same state the libbox client feeds) ----
+
+    private val clashApi by lazy { ClashApiClient(MihomoCore.API_PORT, Settings.apiSecret) }
+    private var mihomoJob: Job? = null
+    private var mihomoLastDown = -1L
+    private var mihomoLastUp = -1L
+
+    /** libbox group snapshot → neutral CoreGroup. */
+    private fun convertGroup(group: OutboundGroup): CoreGroup {
+        val iterator = group.items
+        val items = mutableListOf<CoreGroupItem>()
+        while (iterator.hasNext()) {
+            val item = iterator.next()
+            items.add(CoreGroupItem(item.tag, item.type, item.urlTestDelay, item.urlTestTime))
+        }
+        return CoreGroup(
+            tag = group.tag,
+            type = group.type,
+            selected = group.selected?.takeIf { it.isNotBlank() },
+            items = items,
+        )
+    }
+
+    private fun startMihomoBridge() {
+        if (mihomoJob?.isActive == true) return
+        mihomoJob = viewModelScope.launch(Dispatchers.IO) {
+            while (isActive) {
+                if (Settings.coreKind == CoreKind.MIHOMO) {
+                    runCatching { pollMihomoOnce() }
+                }
+                delay(2000)
+            }
+        }
+    }
+
+    private suspend fun pollMihomoOnce() {
+        if (clashApi.version() == null) return
+        if (probing) return
+        if (_status.value == Status.Starting) markStarted()
+
+        clashApi.proxies()?.let { proxies ->
+            val delays = mutableMapOf<String, Int>()
+            for ((name, v) in proxies) {
+                val history = v.jsonObject["history"]?.let { h ->
+                    (h as? kotlinx.serialization.json.JsonArray)?.lastOrNull()?.jsonObject
+                }
+                history?.get("delay")?.jsonPrimitive?.content?.toIntOrNull()?.let { delays[name] = it }
+            }
+            _delays.value = delays
+            val groups = proxies.values.mapNotNull { entry ->
+                val obj = entry.jsonObject
+                val tag = obj["name"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                if (tag in setOf("GLOBAL", "DIRECT", "REJECT", "COMPATIBLE", "PASS")) return@mapNotNull null
+                val all = obj["all"] as? kotlinx.serialization.json.JsonArray ?: return@mapNotNull null
+                if (all.isEmpty()) return@mapNotNull null
+                CoreGroup(
+                    tag = tag,
+                    type = obj["type"]?.jsonPrimitive?.content ?: "Selector",
+                    selected = obj["now"]?.jsonPrimitive?.content,
+                    items = all.map { nameEl ->
+                        val name = nameEl.jsonPrimitive.content
+                        CoreGroupItem(name, proxies[name]?.jsonObject?.get("type")?.jsonPrimitive?.content ?: "", delays[name] ?: 0, 0L)
+                    },
+                )
+            }
+            _groups.value = groups
+            refreshSplitRuleStatus()
+        }
+
+        clashApi.connections()?.let { conn ->
+            val down = conn["downloadTotal"]?.jsonPrimitive?.content?.toLongOrNull() ?: return@let
+            val up = conn["uploadTotal"]?.jsonPrimitive?.content?.toLongOrNull() ?: return@let
+            if (mihomoLastDown >= 0 && down >= mihomoLastDown && up >= mihomoLastUp) {
+                _speed.value = SpeedState(
+                    uplinkPerSecond = (up - mihomoLastUp) / 2,
+                    downlinkPerSecond = (down - mihomoLastDown) / 2,
+                    uplinkTotal = up,
+                    downlinkTotal = down,
+                )
+                _history.value = (_history.value + ((down - mihomoLastDown) / 2 to (up - mihomoLastUp) / 2)).takeLast(60)
+            }
+            mihomoLastDown = down
+            mihomoLastUp = up
+        }
+    }
+
     init {
         ensureApiSecret()
     }
 
     fun connect() {
         commandClient.connect()
+        startMihomoBridge()
         registerStoppedReceiver()
         // poll-reconnect: the box may start/stop at any time, and a failed
         // connect (server not up yet) must be retried to reflect the state
@@ -327,6 +421,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun disconnect() {
         pollJob?.cancel()
         pollJob = null
+        mihomoJob?.cancel()
+        mihomoJob = null
+        mihomoLastDown = -1L
+        mihomoLastUp = -1L
         startingWatchdog?.cancel()
         startingWatchdog = null
         unregisterStoppedReceiver()
@@ -481,7 +579,46 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
             if (_status.value == Status.Started) {
-                runCatching { CommandTarget.standaloneClient().serviceReload() }
+                when (Settings.coreKind) {
+                    CoreKind.MIHOMO -> runCatching {
+                        com.interstellar.proxy.core.MihomoCore.Holder.instance?.refreshFromConfigStore()
+                    }
+
+                    else -> runCatching { CommandTarget.standaloneClient().serviceReload() }
+                }
+            }
+        }
+    }
+
+    /**
+     * Switch the active engine: stop the running service (an in-flight core
+     * can't morph into another), regenerate the config for the new core and
+     * start it again.
+     */
+    fun switchCore(kind: CoreKind) {
+        if (Settings.coreKind == kind) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val wasRunning = _status.value == Status.Started || _status.value == Status.Starting
+            if (wasRunning) {
+                com.interstellar.proxy.bg.BoxService.stop()
+                var waited = 0
+                while (_status.value != Status.Stopped && waited < 10_000) {
+                    delay(200)
+                    waited += 200
+                }
+            }
+            Settings.coreKind = kind
+            _groups.value = emptyList()
+            _delays.value = emptyMap()
+            mihomoLastDown = -1L
+            mihomoLastUp = -1L
+            val config = SubscriptionRepository.regenerateActiveConfig()
+            if (config == null) {
+                _message.value = SubscriptionRepository.lastConfigError ?: "配置更新失败"
+                return@launch
+            }
+            if (wasRunning) {
+                com.interstellar.proxy.bg.BoxService.start()
             }
         }
     }
@@ -517,10 +654,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         refreshSplitRuleStatus()
         viewModelScope.launch(Dispatchers.IO) {
             if (_status.value == Status.Started) {
-                runCatching {
-                    CommandTarget.standaloneClient().selectOutbound(groupTag, itemTag)
-                }.onFailure {
-                    _message.value = "切换失败: ${it.message}"
+                when (Settings.coreKind) {
+                    CoreKind.MIHOMO -> {
+                        val ok = runCatching { clashApi.select(groupTag, itemTag) }.getOrDefault(false)
+                        if (!ok) _message.value = "切换失败: 内核 API 不可达"
+                        runCatching { pollMihomoOnce() }
+                    }
+
+                    else -> runCatching {
+                        CommandTarget.standaloneClient().selectOutbound(groupTag, itemTag)
+                    }.onFailure {
+                        _message.value = "切换失败: ${it.message}"
+                    }
                 }
             } else {
                 SubscriptionRepository.regenerateActiveConfig()
@@ -597,7 +742,21 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 if (_status.value == Status.Started) {
-                    runCatching { CommandTarget.standaloneClient().urlTest(groupTag) }
+                    when (Settings.coreKind) {
+                        CoreKind.MIHOMO -> {
+                            val result = clashApi.groupDelay(groupTag)
+                            if (result != null) {
+                                _delays.value = _delays.value.toMutableMap().also { map ->
+                                    result.forEach { (name, delay) -> map[name] = delay }
+                                }
+                                _testProgress.value = result.size to result.size
+                            } else {
+                                _message.value = "测速失败: 内核 API 不可达"
+                            }
+                        }
+
+                        else -> runCatching { CommandTarget.standaloneClient().urlTest(groupTag) }
+                    }
                     delay(12_000)
                 } else {
                     runDisconnectedUrlTest()
@@ -615,13 +774,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** Denominator for the batch progress: live group size → known delays → pool size. */
     private fun urlTestTotal(): Int {
         _groups.value.find { it.tag == GROUP_TAG }?.let { group ->
-            var n = 0
-            val iterator = group.items
-            while (iterator.hasNext()) {
-                iterator.next()
-                n++
-            }
-            if (n > 0) return n
+            if (group.items.isNotEmpty()) return group.items.size
         }
         if (_delays.value.isNotEmpty()) return _delays.value.size
         return SubscriptionRepository.poolOf(
@@ -640,33 +793,54 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         probing = true
         probeSocketUp = false
         val previous = ConfigStore.readActiveConfig()
+        val isMihomo = Settings.coreKind == CoreKind.MIHOMO
         try {
             val probe = SubscriptionRepository.regenerateActiveConfig(includeTun = false)
                 ?: throw IllegalStateException(
                     SubscriptionRepository.lastConfigError ?: "无法生成测速配置",
                 )
             com.interstellar.proxy.bg.BoxService.startHeadless()
-            commandClient.connect()
-            // Wait for the command socket. Cold boot (FGS scheduling, rule-set
-            // init) can take well over 6s — probing a raw command client is a
-            // slow-failing gRPC dial, so key off our own connection instead.
-            var connected = false
-            for (i in 0 until 150) { // 150 × 200ms = 30s budget
-                delay(200)
-                if (_status.value == Status.Starting || _status.value == Status.Started) return
-                if (probeSocketUp) {
-                    connected = true
-                    break
+            if (isMihomo) {
+                // wait for the Clash REST API instead of the libbox socket
+                var connected = false
+                for (i in 0 until 150) {
+                    delay(200)
+                    if (_status.value == Status.Starting || _status.value == Status.Started) return
+                    if (runCatching { clashApi.version() }.getOrNull() != null) {
+                        connected = true
+                        break
+                    }
                 }
-                // a failed dial is not retried inside CommandClient — re-kick it
-                if (i > 0 && i % 10 == 0) commandClient.connect()
+                if (!connected) throw IllegalStateException("测速服务启动超时")
+                val result = clashApi.groupDelay(ConfigBuilder.AUTO_TAG)
+                    ?: throw IllegalStateException("测速命令发送失败")
+                _delays.value = _delays.value.toMutableMap().also { map ->
+                    result.forEach { (name, delay) -> map[name] = delay }
+                }
+                delay(1_000)
+            } else {
+                commandClient.connect()
+                // Wait for the command socket. Cold boot (FGS scheduling, rule-set
+                // init) can take well over 6s — probing a raw command client is a
+                // slow-failing gRPC dial, so key off our own connection instead.
+                var connected = false
+                for (i in 0 until 150) { // 150 × 200ms = 30s budget
+                    delay(200)
+                    if (_status.value == Status.Starting || _status.value == Status.Started) return
+                    if (probeSocketUp) {
+                        connected = true
+                        break
+                    }
+                    // a failed dial is not retried inside CommandClient — re-kick it
+                    if (i > 0 && i % 10 == 0) commandClient.connect()
+                }
+                if (!connected) throw IllegalStateException("测速服务启动超时")
+                val ok = runCatching {
+                    CommandTarget.standaloneClient().urlTest(ConfigBuilder.AUTO_TAG)
+                }.isSuccess
+                if (!ok) throw IllegalStateException("测速命令发送失败")
+                delay(10_000)
             }
-            if (!connected) throw IllegalStateException("测速服务启动超时")
-            val ok = runCatching {
-                CommandTarget.standaloneClient().urlTest(ConfigBuilder.AUTO_TAG)
-            }.isSuccess
-            if (!ok) throw IllegalStateException("测速命令发送失败")
-            delay(10_000)
         } finally {
             probeSocketUp = false
             val takenOver = _status.value == Status.Starting || _status.value == Status.Started

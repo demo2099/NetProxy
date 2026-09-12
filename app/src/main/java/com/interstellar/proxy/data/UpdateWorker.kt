@@ -22,7 +22,14 @@ class UpdateWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         val messages = SubscriptionRepository.refreshAll()
         // core hot-reload picks up the regenerated active config
         if (messages.isNotEmpty() && Settings.tileActive) {
-            runCatching { CommandTarget.standaloneClient().serviceReload() }
+            when (Settings.coreKind) {
+                com.interstellar.proxy.core.CoreKind.MIHOMO ->
+                    runCatching {
+                        com.interstellar.proxy.core.MihomoCore.Holder.instance?.refreshFromConfigStore()
+                    }
+
+                else -> runCatching { CommandTarget.standaloneClient().serviceReload() }
+            }
         }
         return Result.success()
     }

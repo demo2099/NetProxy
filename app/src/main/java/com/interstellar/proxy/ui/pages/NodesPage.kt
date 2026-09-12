@@ -121,11 +121,7 @@ fun NodesPage(viewModel: AppViewModel) {
         PageHeader(kicker = "NODES", title = "节点")
 
         val liveItems = remember(mainGroup) {
-            if (mainGroup == null) emptyList()
-            else buildList {
-                val iterator = mainGroup.items
-                while (iterator.hasNext()) add(iterator.next())
-            }
+            mainGroup?.items ?: emptyList()
         }
         // tag → full node model, so cards and the detail sheet can show protocol info
         val nodeByTag = remember(storedNodes) {
@@ -428,16 +424,13 @@ fun NodesPage(viewModel: AppViewModel) {
  * member (or the first one) instead of sitting blank.
  */
 private fun autoNowTag(
-    groups: List<io.nekohasekai.libbox.OutboundGroup>,
+    groups: List<com.interstellar.proxy.core.CoreGroup>,
     delays: Map<String, Int>,
 ): String? {
     val auto = groups.find { it.tag == ConfigBuilder.AUTO_TAG } ?: return null
     val now = auto.selected?.takeIf { it.isNotBlank() && it != ConfigBuilder.AUTO_TAG }
     if (now != null) return now
-    val items = buildList {
-        val iterator = auto.items
-        while (iterator.hasNext()) add(iterator.next())
-    }
+    val items = auto.items
     if (items.isEmpty()) return null
     return items.minByOrNull { item ->
         val d = delays[item.tag]?.takeIf { it > 0 }
@@ -446,7 +439,7 @@ private fun autoNowTag(
     }?.tag
 }
 
-private fun autoDelay(groups: List<io.nekohasekai.libbox.OutboundGroup>, delays: Map<String, Int>): Int {
+private fun autoDelay(groups: List<com.interstellar.proxy.core.CoreGroup>, delays: Map<String, Int>): Int {
     val now = autoNowTag(groups, delays) ?: return 0
     delays[now]?.takeIf { it > 0 }?.let { return it }
     delays[ConfigBuilder.AUTO_TAG]?.takeIf { it > 0 }?.let { return it }

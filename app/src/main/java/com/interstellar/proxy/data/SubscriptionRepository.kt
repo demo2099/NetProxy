@@ -185,25 +185,32 @@ object SubscriptionRepository {
             selectedTag = ConfigBuilder.AUTO_TAG
             Settings.selectedOutboundTag = ConfigBuilder.AUTO_TAG
         }
-        val content = ConfigBuilder.build(
-            nodes,
-            ConfigBuilder.BuildOptions(
-                mode = Settings.outboundMode,
-                bypassLan = Settings.bypassLanEnabled,
-                bypassCn = Settings.bypassCnEnabled,
-                adBlock = Settings.adBlockEnabled,
-                selectedNodeTag = selectedTag,
-                apiSecret = Settings.apiSecret,
-                customRules = CustomRulesStore.rules.toList(),
-                dnsOverrides = DnsOverridesStore.enabled(),
-                applyNodeFilterRules = Settings.splitRulesEnabled &&
-                    Settings.outboundMode == ConfigBuilder.OutboundMode.RULE,
-                regionGroupsEnabled = regionGroups,
-                includeTun = includeTun,
-            ),
+        val opts = ConfigBuilder.BuildOptions(
+            mode = Settings.outboundMode,
+            bypassLan = Settings.bypassLanEnabled,
+            bypassCn = Settings.bypassCnEnabled,
+            adBlock = Settings.adBlockEnabled,
+            selectedNodeTag = selectedTag,
+            apiSecret = Settings.apiSecret,
+            customRules = CustomRulesStore.rules.toList(),
+            dnsOverrides = DnsOverridesStore.enabled(),
+            applyNodeFilterRules = Settings.splitRulesEnabled &&
+                Settings.outboundMode == ConfigBuilder.OutboundMode.RULE,
+            regionGroupsEnabled = regionGroups,
+            includeTun = includeTun,
         )
+        val coreKind = Settings.coreKind
+        val content =
+            if (coreKind == com.interstellar.proxy.core.CoreKind.MIHOMO) {
+                com.interstellar.proxy.data.config.MihomoConfigBuilder.build(nodes, opts)
+            } else {
+                ConfigBuilder.build(nodes, opts)
+            }
         return try {
-            Libbox.checkConfig(content)
+            // libbox only validates sing-box JSON; mihomo self-validates at spawn
+            if (coreKind != com.interstellar.proxy.core.CoreKind.MIHOMO) {
+                Libbox.checkConfig(content)
+            }
             ConfigStore.writeActiveConfig(content)
             lastConfigError = null
             content

@@ -106,6 +106,7 @@ class BoxService(private val service: Service, private val platformInterface: Pl
             perAppEnabled = Settings.perAppProxyEnabled,
             perAppInclude = Settings.perAppProxyMode == Settings.PER_APP_PROXY_INCLUDE,
             perAppPackages = Settings.perAppProxyList,
+            selectedTag = Settings.selectedOutboundTag.takeIf { it.isNotBlank() },
         )
 
     private suspend fun startCore() {
@@ -184,6 +185,9 @@ class BoxService(private val service: Service, private val platformInterface: Pl
     override fun onSetSystemProxy(enabled: Boolean) {
         serviceReload()
     }
+
+    override fun openSidecarTun(spec: com.interstellar.proxy.core.SidecarTunSpec): Int? =
+        (service as? VPNService)?.establishSidecarTun(spec)
 
     fun serviceReload() {
         runBlocking {

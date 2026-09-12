@@ -37,10 +37,23 @@ data class CoreOverrides(
     val perAppEnabled: Boolean,
     val perAppInclude: Boolean,
     val perAppPackages: Set<String>,
+    /** Tag the UI wants selected (mihomo applies it via Clash API post-start). */
+    val selectedTag: String? = null,
 )
 
 /** Neutral system-proxy state (BoxService ↔ core, decoupled from libbox types). */
 data class SystemProxyState(val available: Boolean, val enabled: Boolean)
+
+/** Tun spec a sidecar core needs before spawning (fd inheritance). */
+data class SidecarTunSpec(
+    /** Hosts/IPs to exclude from VPN routes (node servers + DNS upstreams). */
+    val exclusions: List<String>,
+    val perAppEnabled: Boolean,
+    val perAppInclude: Boolean,
+    val perAppPackages: Set<String>,
+    val allowBypass: Boolean,
+    val mtu: Int = 9000,
+)
 
 /** Core → service callbacks. */
 interface CoreHost {
@@ -53,12 +66,18 @@ interface CoreHost {
     fun systemProxyState(): SystemProxyState?
 
     fun onSetSystemProxy(enabled: Boolean)
+
+    /**
+     * Establish a VPN tun for a sidecar core and return its (CLOEXEC-cleared)
+     * fd for config embedding; null when not in VPN mode.
+     */
+    fun openSidecarTun(spec: SidecarTunSpec): Int? = null
 }
 
 object CoreEngines {
     /**
-     * Phase 1 only knows sing-box; unknown kinds fall back to it so a stale
-     * settings file can never brick the service. Phase 2/3 add sidecars here.
+     * Unknown / not-yet-shipped kinds fall back to sing-box so a stale
+     * settings file can never brick the service.
      */
     fun create(
         kind: CoreKind,
@@ -67,10 +86,9 @@ object CoreEngines {
     ): ProxyCore =
         when (kind) {
             CoreKind.SINGBOX -> SingBoxCore(platformInterface, host)
-            CoreKind.MIHOMO,
-            CoreKind.XRAY,
-            -> {
-                android.util.Log.w("CoreEngines", "core ${kind.wire} not available yet, using sing-box")
+            CoreKind.MIHOMO -> MihomoCore(com.interstellar.proxy.InterstellarApplication.application, host)
+            CoreKind.XRAY -> {
+                android.util.Log.w("CoreEngines", "core xray not available yet, using sing-box")
                 SingBoxCore(platformInterface, host)
             }
         }

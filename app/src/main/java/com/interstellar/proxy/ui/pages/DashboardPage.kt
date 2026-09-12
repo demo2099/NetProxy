@@ -75,7 +75,7 @@ import com.interstellar.proxy.ui.components.pressableClick
 import com.interstellar.proxy.ui.theme.LocalInterstellarColors
 import com.interstellar.proxy.ui.theme.Motion
 import io.nekohasekai.libbox.Libbox
-import io.nekohasekai.libbox.OutboundGroup
+import com.interstellar.proxy.core.CoreGroup
 
 private const val CORE_VERSION = "sing-box 1.14.0"
 
@@ -666,9 +666,9 @@ private fun formatElapsed(ms: Long): String {
 }
 
 private fun nodeRowValue(
-    groups: List<OutboundGroup>,
+    groups: List<CoreGroup>,
     delays: Map<String, Int>,
-    mainGroup: OutboundGroup?,
+    mainGroup: CoreGroup?,
     storedSelected: String,
 ): String {
     // live core selection first; when 未连接 fall back to the persisted tag
@@ -681,9 +681,9 @@ private fun nodeRowValue(
 
 /** Leaf node tag currently in use (null when it stays on a group / auto itself). */
 private fun currentLeafTag(
-    groups: List<OutboundGroup>,
+    groups: List<CoreGroup>,
     delays: Map<String, Int>,
-    mainGroup: OutboundGroup?,
+    mainGroup: CoreGroup?,
 ): String? {
     val selected = mainGroup?.selected?.takeIf { it.isNotBlank() } ?: return null
     val leaf = resolveNow(groups, delays, selected)
@@ -696,7 +696,7 @@ private fun currentLeafTag(
  * (or first) member so the home row does not sit on "自动" for seconds.
  */
 private fun resolveNow(
-    groups: List<OutboundGroup>,
+    groups: List<CoreGroup>,
     delays: Map<String, Int>,
     tag: String,
     depth: Int = 0,
@@ -717,15 +717,12 @@ private fun resolveNow(
     return if (candidate == tag) tag else resolveNow(groups, delays, candidate, depth + 1)
 }
 
-private fun groupItems(group: OutboundGroup): List<io.nekohasekai.libbox.OutboundGroupItem> = buildList {
-    val it = group.items
-    while (it.hasNext()) add(it.next())
-}
+private fun groupItems(group: com.interstellar.proxy.core.CoreGroup) = group.items
 
-private fun delayOfItem(item: io.nekohasekai.libbox.OutboundGroupItem, delays: Map<String, Int>): Int =
+private fun delayOfItem(item: com.interstellar.proxy.core.CoreGroupItem, delays: Map<String, Int>): Int =
     delays[item.tag]?.takeIf { it > 0 } ?: item.urlTestDelay
 
-private fun delayOf(groups: List<OutboundGroup>, delays: Map<String, Int>): Int {
+private fun delayOf(groups: List<com.interstellar.proxy.core.CoreGroup>, delays: Map<String, Int>): Int {
     val main = groups.find { it.tag == ConfigBuilder.GROUP_TAG } ?: return 0
     val selected = main.selected ?: return 0
     val leaf = resolveNow(groups, delays, selected)

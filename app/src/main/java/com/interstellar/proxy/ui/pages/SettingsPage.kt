@@ -78,7 +78,11 @@ private fun isIgnoringBatteryOptimizations(context: android.content.Context): Bo
  * squares, no separators) and right-aligned controls.
  */
 @Composable
-fun SettingsPage(onOpen: (SettingsSubPage) -> Unit, onProxyChanged: () -> Unit = {}) {
+fun SettingsPage(
+    onOpen: (SettingsSubPage) -> Unit,
+    onProxyChanged: () -> Unit = {},
+    onCoreChanged: (com.interstellar.proxy.core.CoreKind) -> Unit = {},
+) {
     val colors = LocalInterstellarColors.current
     val context = androidx.compose.ui.platform.LocalContext.current
     var themeMode by remember { mutableStateOf(Settings.themeMode) }
@@ -149,13 +153,16 @@ fun SettingsPage(onOpen: (SettingsSubPage) -> Unit, onProxyChanged: () -> Unit =
                 layout = SegLayout.Below,
                 onSelect = { index ->
                     val picked = coreOrder[index]
-                    if (picked == com.interstellar.proxy.core.CoreKind.SINGBOX) {
-                        if (Settings.coreKind != picked) {
-                            Settings.coreKind = picked
-                            onProxyChanged()
+                    when (picked) {
+                        com.interstellar.proxy.core.CoreKind.SINGBOX,
+                        com.interstellar.proxy.core.CoreKind.MIHOMO,
+                        -> {
+                            if (Settings.coreKind != picked) {
+                                onCoreChanged(picked)
+                            }
                         }
-                    } else {
-                        android.widget.Toast.makeText(
+
+                        else -> android.widget.Toast.makeText(
                             context,
                             "${picked.displayName} 内核即将上线",
                             android.widget.Toast.LENGTH_SHORT,
@@ -164,7 +171,7 @@ fun SettingsPage(onOpen: (SettingsSubPage) -> Unit, onProxyChanged: () -> Unit =
                 },
             )
         }
-        IosSectionFooter("多内核施工中:mihomo 与 Xray 将以独立子进程接入,与 sing-box 一键切换。")
+        IosSectionFooter("切换内核会重启代理服务;mihomo 以独立子进程运行,与 sing-box 一键互切。")
 
         Spacer(Modifier.height(22.dp))
 
