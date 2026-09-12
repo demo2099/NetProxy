@@ -26,7 +26,7 @@ object MihomoConfigBuilder {
     const val REJECT = "REJECT"
     private const val TEST_URL = "https://www.gstatic.com/generate_204"
 
-    fun build(nodes: List<ProxyNode>, options: ConfigBuilder.BuildOptions, tunFd: Int? = null): String {
+    fun build(nodes: List<ProxyNode>, options: ConfigBuilder.BuildOptions): String {
         val usable = nodes.filter { it.type != NodeType.UNKNOWN }
         val tags = ConfigBuilder.tagsFor(usable)
         val used = tags.toMutableSet()
@@ -49,24 +49,23 @@ object MihomoConfigBuilder {
             if (options.apiSecret.isNotBlank()) put("secret", options.apiSecret)
             // keep manual node selection across process restarts
             put("profile", Yaml.map { put("store-selected", true) })
-            if (options.includeTun) {
-                // fd 0 is a placeholder — MihomoCore injects the VpnService fd
-                // before spawning (or strips the block for proxy-only mode)
-                put("tun", Yaml.map {
+            // no fake-ip in sidecar mode (TUN is bridged by hev) — sniff
+            // connections back to domains so GEOSITE/DOMAIN rules still match
+            put(
+                "sniffer",
+                Yaml.map {
                     put("enable", true)
-                    put("stack", "mixed")
-                    put("device", "interstellar")
-                    put("file-descriptor", tunFd ?: 0)
-                    // NOTE: mihomo's parseTun derives the interface address from
-                    // fake-ip-range (base/30) and IGNORES inet4-address — the
-                    // VPN builder must use 198.18.0.1/30 + DNS 198.18.0.2
-                    put("mtu", 9000)
-                    put("auto-route", false)
-                    put("auto-redirect", false)
-                    put("auto-detect-interface", false)
-                    put("dns-hijack", listOf("any:53"))
-                })
-            }
+                    put(
+                        "sniff",
+                        Yaml.map {
+                            put("TLS", Yaml.map { put("ports", listOf("443", "8443")) })
+                            put("HTTP", Yaml.map { put("ports", listOf("80", "8080-8880")) })
+                            put("QUIC", Yaml.map { put("ports", listOf("443", "8443")) })
+                        },
+                    )
+                    put("override-destination", true)
+                },
+            )
             put("dns", buildDns(options))
             put("proxies", buildProxies(usable, tags))
             put("proxy-groups", buildGroups(tags, regionGroups, customGroups))
@@ -471,6 +470,7 @@ object MihomoConfigBuilder {
             val host = node.server.trim()
             if (host.isNotEmpty()) add(host)
         }
-        addAll(listOf("223.5.5.5", "119.29.29.29", "1.1.1.1"))
+        // 1.1.1.1 is NOT excluded: app DNS rides the tunnel to it
+        addAll(listOf("223.5.5.5", "119.29.29.29"))
     }
 }

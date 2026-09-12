@@ -15,14 +15,19 @@ import com.interstellar.proxy.data.Settings
 import com.interstellar.proxy.ktx.toIpPrefix
 import com.interstellar.proxy.ktx.toList
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 class VPNService :
     VpnService(),
     PlatformInterfaceWrapper {
     companion object {
         private const val TAG = "VPNService"
+        private const val EXCLUSION_RESOLVE_BUDGET_MS = 3000L
     }
 
     private val service = BoxService(this, this)
@@ -201,7 +206,12 @@ class VPNService :
      * The returned fd has CLOEXEC cleared so the exec'd core inherits it.
      */
     fun establishSidecarTun(spec: com.interstellar.proxy.core.SidecarTunSpec): Int? {
-        if (prepare(this) != null) return null
+        val started = android.os.SystemClock.elapsedRealtime()
+        com.interstellar.proxy.core.AppLog.log("vpn", "建立 sidecar TUN…")
+        if (prepare(this) != null) {
+            com.interstellar.proxy.core.AppLog.log("vpn", "VPN 未授权, 以纯代理模式启动")
+            return null
+        }
 
         val builder = Builder()
             .setSession(getString(R.string.app_name))
@@ -212,12 +222,16 @@ class VPNService :
         if (spec.allowBypass) {
             builder.allowBypass()
         }
-        // mihomo parseTun hardcodes the interface address to fake-ip-range's
-        // base /30 (inet4-address is ignored) and serves DNS on address.Next()
-        builder.addAddress("198.18.0.1", 30)
-        builder.addDnsServer("198.18.0.2")
+        // conventional tun addressing; the fd stays in-process (hev bridge)
+        builder.addAddress("172.19.0.1", 30)
+        // app DNS rides the tunnel (hev → socks → mihomo rules)
+        builder.addDnsServer("1.1.1.1")
 
         val excluded = resolveExclusions(spec.exclusions)
+        com.interstellar.proxy.core.AppLog.log(
+            "vpn",
+            "排除路由 ${excluded.size} 条 (解析耗时 ${android.os.SystemClock.elapsedRealtime() - started}ms)",
+        )
         val hasModernExclusions = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
         if (hasModernExclusions) {
             builder.addRoute("0.0.0.0", 0)
@@ -249,26 +263,48 @@ class VPNService :
 
         val pfd = builder.establish() ?: return null
         service.fileDescriptor = pfd
-        // child must inherit the fd across exec
-        runCatching { android.system.Os.fcntlInt(pfd.fileDescriptor, android.system.OsConstants.F_SETFD, 0) }
+        Log.i(TAG, "sidecar tun established fd=${pfd.fd}")
+        com.interstellar.proxy.core.AppLog.log("vpn", "sidecar tun fd=${pfd.fd}")
         return pfd.fd
     }
 
-    /** hosts/IPs → IpPrefixes (domains resolved via the system resolver). */
+    /** hosts/IPs → IpPrefixes; domains resolve in parallel under a hard budget. */
     private fun resolveExclusions(hosts: List<String>): List<android.net.IpPrefix> {
-        val prefixes = mutableListOf<android.net.IpPrefix>()
+        val literals = mutableListOf<android.net.IpPrefix>()
+        val domains = mutableListOf<String>()
         for (host in hosts.distinct()) {
-            val ip = host.substringBefore('/')
+            val ip = host.substringBefore('/').trim()
             if (ip.isEmpty()) continue
+            // literal IPs parse without any DNS lookup
             val literal = runCatching {
-                val addr = java.net.InetAddress.getByName(ip)
-                if (addr.isAnyLocalAddress || addr.isLoopbackAddress) null else addr
+                java.net.InetAddress.getByName(ip).takeIf {
+                    it.hostAddress == ip && !it.isAnyLocalAddress() && !it.isLoopbackAddress()
+                }
             }.getOrNull()
             if (literal != null) {
-                prefixes.add(android.net.IpPrefix(literal, if (literal.address.size == 4) 32 else 128))
+                literals.add(android.net.IpPrefix(literal, if (literal.address.size == 4) 32 else 128))
+            } else {
+                domains.add(ip)
             }
         }
-        return prefixes
+        if (domains.isEmpty()) return literals
+        // sequential getByName can take 5s per slow host — parallel + budget
+        val resolved: List<java.net.InetAddress> = runBlocking {
+            withTimeoutOrNull(EXCLUSION_RESOLVE_BUDGET_MS) {
+                coroutineScope {
+                    domains.map { d ->
+                        async(Dispatchers.IO) {
+                            runCatching { java.net.InetAddress.getAllByName(d).toList() }
+                                .getOrDefault(emptyList())
+                        }
+                    }.awaitAll().flatten()
+                }
+            }
+        }.orEmpty()
+        return literals + resolved
+            .filter { !it.isAnyLocalAddress() && !it.isLoopbackAddress() }
+            .map { android.net.IpPrefix(it, if (it.address.size == 4) 32 else 128) }
+            .distinct()
     }
 
     /** IPv4 full space minus exclusions as addRoute-able prefixes (API < 33). */

@@ -26,6 +26,7 @@ object AppLog {
             buffer.addLast(line)
             while (buffer.size > LIMIT) buffer.removeFirst()
         }
+        android.util.Log.i("AppLog", "[$tag] $message")
         _events.tryEmit(line)
     }
 }

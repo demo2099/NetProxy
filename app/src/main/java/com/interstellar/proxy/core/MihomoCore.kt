@@ -63,7 +63,7 @@ class MihomoCore(
         lastOverrides = overrides
         if (sidecar?.running == true) {
             // hot reload: rewrite the file, then ask mihomo to re-read it
-            configFile.writeText(materialize(config))
+            configFile.writeText(stripTun(config))
             if (api.reload(configFile.absolutePath)) {
                 AppLog.log("mihomo", "配置已热重载")
                 applySelection(overrides)
@@ -73,6 +73,9 @@ class MihomoCore(
             sidecar?.destroy()
         }
 
+        // VPN mode: the fd stays in-process — ProcessBuilder closes inherited
+        // fds, so the TUN is bridged by hev-socks5-tunnel (JNI) to mihomo's
+        // mixed port and the core always runs proxy-only
         val tunFd = host.openSidecarTun(
             SidecarTunSpec(
                 exclusions = routeExclusions(),
@@ -82,9 +85,19 @@ class MihomoCore(
                 allowBypass = Settings.allowBypass,
             ),
         )
+        if (tunFd != null) {
+            val ok = runCatching { TProxyService.start(context, tunFd, MIXED_PORT) }.getOrDefault(false)
+            if (!ok) {
+                Log.e(TAG, "hev tun bridge failed to start")
+                AppLog.log("vpn", "hev TUN 桥启动失败")
+                error("TUN 桥接启动失败")
+            }
+            AppLog.log("vpn", "hev TUN 桥已启动 (fd=$tunFd → 127.0.0.1:$MIXED_PORT)")
+        }
         activeTunFd = tunFd
 
-        configFile.writeText(materialize(config))
+        // stale stored configs may still carry a tun block — strip it
+        configFile.writeText(stripTun(config))
 
         val process = SidecarProcess(context, "libmihomo.so", listOf("-d", workDir.absolutePath, "-f", configFile.absolutePath), workDir) { code ->
             Log.e(TAG, "mihomo exited unexpectedly: $code")
@@ -121,6 +134,7 @@ class MihomoCore(
 
     override suspend fun shutdown() {
         Holder.instance = null
+        TProxyService.stop()
         activeTunFd = null
         sidecar?.destroy()
         sidecar = null
@@ -133,15 +147,6 @@ class MihomoCore(
     }
 
     // ---- helpers ----
-
-    /** Bake the tun state (fd / strip) into the generated config text. */
-    private fun materialize(config: String): String {
-        val fd = activeTunFd ?: return stripTun(config)
-        return config.replaceFirst(
-            Regex("(file-descriptor:)\\s*0(\\s*)"),
-            "$1 $fd$2",
-        )
-    }
 
     /** mihomo select groups have no config default — apply via API (store-selected persists it). */
     private suspend fun applySelection(overrides: CoreOverrides) {
@@ -172,6 +177,8 @@ class MihomoCore(
     companion object {
         private const val TAG = "MihomoCore"
         const val API_PORT = 9090
+        /** must match ConfigBuilder.BuildOptions.mixedPort default */
+        const val MIXED_PORT = 2080
         private const val READY_POLLS = 20
         private const val READY_INTERVAL_MS = 500L
     }

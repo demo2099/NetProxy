@@ -51,16 +51,13 @@ class MihomoConfigBuilderTest {
         check("proxies" in doc) { "proxies missing" }
         check("proxy-groups" in doc) { "proxy-groups missing" }
         check("rules" in doc) { "rules missing" }
-        check("tun" in doc) { "tun missing" }
+        check("sniffer" in doc) { "sniffer missing (domain rules depend on it)" }
         check("dns" in doc) { "dns missing" }
         val dns = doc["dns"]!!.jsonObject
         check("proxy-server-nameserver" in dns) { "node-server direct dns missing" }
         check(doc["mixed-port"]!!.jsonPrimitive.content == "2080") { "mixed-port" }
         check(doc["external-controller"]!!.jsonPrimitive.content == "127.0.0.1:9090") { "clash api" }
-
-        val tun = doc["tun"]!!.jsonObject
-        check(tun["file-descriptor"]!!.jsonPrimitive.content == "0") { "tun fd placeholder" }
-        check(tun["auto-route"]!!.jsonPrimitive.content == "false") { "tun auto-route off" }
+        check("tun" !in doc) { "tun must be absent (sidecar proxy-only + hev bridge)" }
 
         val proxies = doc["proxies"]!!.jsonArray
         check(proxies.size == 3) { "3 proxies, got ${proxies.size}" }
