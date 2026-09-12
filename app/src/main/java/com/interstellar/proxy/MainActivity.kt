@@ -18,8 +18,6 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -66,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
 import com.interstellar.proxy.data.Settings
 import com.interstellar.proxy.ui.AppViewModel
 import com.interstellar.proxy.ui.ConnectionsViewModel
@@ -244,67 +243,52 @@ fun AppRoot(
                         ) {
                             switchTab(com.interstellar.proxy.ui.pages.MainTab.Home)
                         }
-                        // tab root + floating glass dock (satelite's capsule navbar)
+                        // tab roots live in a HorizontalPager: finger-following drag,
+                        // snap settle (iOS-style), gestures owned by the pager itself
+                        val tabs = com.interstellar.proxy.ui.pages.MainTab.entries
+                        val pagerState = androidx.compose.foundation.pager.rememberPagerState(
+                            initialPage = nav.tab.ordinal,
+                        ) { tabs.size }
+                        val scope = androidx.compose.runtime.rememberCoroutineScope()
+                        // user swiped the pager → sync nav.tab (dock highlight, back key)
+                        androidx.compose.runtime.LaunchedEffect(pagerState) {
+                            androidx.compose.runtime.snapshotFlow { pagerState.settledPage }
+                                .collect { page ->
+                                    val target = tabs[page]
+                                    if (nav.tab != target) switchTab(target)
+                                }
+                        }
+                        // nav.tab changed externally (back key / dashboard shortcuts) → pager follows
+                        androidx.compose.runtime.LaunchedEffect(nav.tab) {
+                            val target = nav.tab.ordinal
+                            if (!pagerState.isScrollInProgress && pagerState.settledPage != target) {
+                                pagerState.animateScrollToPage(target)
+                            }
+                        }
                         Column(modifier = Modifier.fillMaxSize()) {
-                            // 左右滑动在 dock 四个 tab 间切换
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .pointerInput(Unit) {
-                                        var accum = 0f
-                                        detectHorizontalDragGestures(
-                                            onDragStart = { accum = 0f },
-                                            onDragEnd = {
-                                                val threshold = 70.dp.toPx()
-                                                val idx = nav.tab.ordinal
-                                                val tabs = com.interstellar.proxy.ui.pages.MainTab.entries
-                                                when {
-                                                    accum < -threshold && idx < tabs.lastIndex ->
-                                                        switchTab(tabs[idx + 1])
+                            androidx.compose.foundation.pager.HorizontalPager(
+                                state = pagerState,
+                                modifier = Modifier.weight(1f),
+                            ) { page ->
+                                when (tabs[page]) {
+                                    com.interstellar.proxy.ui.pages.MainTab.Home -> DashboardPage(
+                                        viewModel = appViewModel,
+                                        connectionsViewModel = connectionsViewModel,
+                                        onStart = { requestVpnThenStart { appViewModel.startProxy() } },
+                                        onOpenSubPage = { sub -> push(sub) },
+                                        onOpenTab = { t -> switchTab(t) },
+                                    )
 
-                                                    accum > threshold && idx > 0 ->
-                                                        switchTab(tabs[idx - 1])
-                                                }
-                                            },
-                                        ) { _, dragAmount -> accum += dragAmount }
-                                    },
-                            ) {
-                                AnimatedContent(
-                                    targetState = nav.tab,
-                                    transitionSpec = {
-                                        val dir = targetState.ordinal
-                                            .compareTo(initialState.ordinal)
-                                            .coerceIn(-1, 1)
-                                        val enter = slideInHorizontally(
-                                            tween(Motion.DURATION_PAGE, easing = Motion.EaseOutQuart),
-                                        ) { dir * 46 } + fadeIn(tween(Motion.DURATION_PAGE))
-                                        val exit = slideOutHorizontally(
-                                            tween(Motion.DURATION_PAGE, easing = Motion.EaseOutQuart),
-                                        ) { -dir * 46 } + fadeOut(tween(180))
-                                        enter togetherWith exit
-                                    },
-                                    label = "tab",
-                                ) { tab ->
-                                    when (tab) {
-                                        com.interstellar.proxy.ui.pages.MainTab.Home -> DashboardPage(
-                                            viewModel = appViewModel,
-                                            connectionsViewModel = connectionsViewModel,
-                                            onStart = { requestVpnThenStart { appViewModel.startProxy() } },
-                                            onOpenSubPage = { sub -> push(sub) },
-                                            onOpenTab = { t -> switchTab(t) },
-                                        )
+                                    com.interstellar.proxy.ui.pages.MainTab.Nodes ->
+                                        com.interstellar.proxy.ui.pages.NodesPage(appViewModel)
 
-                                        com.interstellar.proxy.ui.pages.MainTab.Nodes ->
-                                            com.interstellar.proxy.ui.pages.NodesPage(appViewModel)
+                                    com.interstellar.proxy.ui.pages.MainTab.Subscriptions ->
+                                        com.interstellar.proxy.ui.pages.SubscriptionsPage(appViewModel)
 
-                                        com.interstellar.proxy.ui.pages.MainTab.Subscriptions ->
-                                            com.interstellar.proxy.ui.pages.SubscriptionsPage(appViewModel)
-
-                                        com.interstellar.proxy.ui.pages.MainTab.Settings -> SettingsPage(
-                                            onOpen = { sub -> push(sub) },
-                                            onProxyChanged = { appViewModel.refreshProxyConfig() },
-                                        )
-                                    }
+                                    com.interstellar.proxy.ui.pages.MainTab.Settings -> SettingsPage(
+                                        onOpen = { sub -> push(sub) },
+                                        onProxyChanged = { appViewModel.refreshProxyConfig() },
+                                    )
                                 }
                             }
                             GlassDock(
@@ -314,8 +298,10 @@ fun AppRoot(
                                     DockItem("订阅", Icons.Outlined.Subscriptions, Icons.Filled.Subscriptions),
                                     DockItem("设置", Icons.Outlined.Settings, Icons.Filled.Settings),
                                 ),
-                                selected = nav.tab.ordinal,
-                                onSelect = { switchTab(com.interstellar.proxy.ui.pages.MainTab.entries[it]) },
+                                selected = pagerState.currentPage,
+                                onSelect = { i ->
+                                    scope.launch { pagerState.animateScrollToPage(i) }
+                                },
                             )
                         }
                     }
@@ -328,37 +314,16 @@ fun AppRoot(
     }
 }
 
-/** iOS-style pushed page with back chevron header + system back support. */
+/** Pushed sub-page with glass capsule header + system back support. */
 @Composable
 private fun SubPageContainer(
     title: String,
     onBack: () -> Unit,
-    swipeBack: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val colors = LocalInterstellarColors.current
     androidx.activity.compose.BackHandler { onBack() }
-    // 右滑返回主页（仅设置页开启，节点页有自己的横向 tab 滑动）
-    val back by androidx.compose.runtime.rememberUpdatedState(onBack)
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .then(
-                if (swipeBack) {
-                    Modifier.pointerInput(Unit) {
-                        var accum = 0f
-                        detectHorizontalDragGestures(
-                            onDragStart = { accum = 0f },
-                            onDragEnd = {
-                                if (accum > 70.dp.toPx()) back()
-                            },
-                        ) { _, dragAmount -> accum += dragAmount }
-                    }
-                } else {
-                    Modifier
-                },
-            ),
-    ) {
+    Column(modifier = Modifier.fillMaxSize()) {
         val light = 0.2126f * colors.bg.red + 0.7152f * colors.bg.green + 0.0722f * colors.bg.blue > 0.5f
         // floating glass capsule header
         Box(
