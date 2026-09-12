@@ -1,11 +1,5 @@
 package com.interstellar.proxy.ui.pages
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -13,15 +7,16 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -29,7 +24,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -49,31 +46,42 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.interstellar.proxy.R
 import com.interstellar.proxy.constant.Status
+import com.interstellar.proxy.data.Settings
 import com.interstellar.proxy.data.SubscriptionRepository
 import com.interstellar.proxy.data.config.ConfigBuilder
 import com.interstellar.proxy.ui.AppViewModel
 import com.interstellar.proxy.ui.ConnectionsViewModel
+import com.interstellar.proxy.ui.ProbeState
 import com.interstellar.proxy.ui.components.FaceMark
+import com.interstellar.proxy.ui.components.GlassButton
+import com.interstellar.proxy.ui.components.GlassButtonStyle
+import com.interstellar.proxy.ui.components.GlassCard
+import com.interstellar.proxy.ui.components.OrbitHero
+import com.interstellar.proxy.ui.components.SegmentedControl
+import com.interstellar.proxy.ui.components.StatusPill
+import com.interstellar.proxy.ui.components.TrafficSparkline
+import com.interstellar.proxy.ui.components.glassSurface
 import com.interstellar.proxy.ui.components.pressableClick
 import com.interstellar.proxy.ui.theme.LocalInterstellarColors
 import com.interstellar.proxy.ui.theme.Motion
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.OutboundGroup
+
+private const val CORE_VERSION = "sing-box 1.14.0"
 
 @Composable
 fun DashboardPage(
@@ -97,6 +105,9 @@ fun DashboardPage(
     val mixSubscriptionIds by viewModel.mixSubscriptionIds.collectAsState()
     val connectedAt by viewModel.connectedAt.collectAsState()
     val connections by connectionsViewModel.connections.collectAsState()
+    val history by viewModel.history.collectAsState()
+    val clashMode by viewModel.clashMode.collectAsState()
+    val probe by viewModel.probe.collectAsState()
     val running = status == Status.Started
     val activeConnectionCount = connections.count { !it.closed }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -136,255 +147,526 @@ fun DashboardPage(
             },
     ) {
         val viewportHeight = maxHeight
-        val faceSize = 312.dp.coerceAtMost(maxWidth - 32.dp)
+        val heroSize = 196.dp.coerceAtMost(maxWidth - 140.dp)
         Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = viewportHeight)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 28.dp, bottom = 8.dp),
+                .heightIn(min = viewportHeight)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Column(
+            // ── 顶栏：品牌 + 监控/设置 玻璃圆钮
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(end = 104.dp),
-                horizontalAlignment = Alignment.Start,
+                    .padding(top = 22.dp, bottom = 4.dp),
             ) {
-                Text(
-                    stringResource(R.string.app_name),
-                    color = colors.text,
-                    fontSize = 34.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    stringResource(R.string.app_tagline),
-                    color = colors.textTertiary,
-                    fontSize = 13.sp,
-                )
-            }
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.align(Alignment.TopEnd),
-            ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(44.dp)
-                        .pressableClick { onOpenSubPage(SettingsSubPage.Connections) },
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.TrendingUp,
-                        contentDescription = "监控",
-                        tint = colors.text,
-                        modifier = Modifier.size(22.dp),
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.app_name),
+                        color = colors.text,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        stringResource(R.string.app_tagline),
+                        color = colors.textTertiary,
+                        fontSize = 11.sp,
+                        letterSpacing = 1.sp,
                     )
                 }
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(44.dp)
-                        .pressableClick { onOpenSubPage(SettingsSubPage.Settings) },
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Settings,
-                        contentDescription = "设置",
-                        tint = colors.text,
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
+                GlassIconButton(
+                    icon = Icons.AutoMirrored.Outlined.TrendingUp,
+                    contentDescription = "监控",
+                ) { onOpenSubPage(SettingsSubPage.Connections) }
+                Spacer(Modifier.width(8.dp))
+                GlassIconButton(
+                    icon = Icons.Outlined.Settings,
+                    contentDescription = "设置",
+                ) { onOpenSubPage(SettingsSubPage.Settings) }
             }
-        }
 
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = (viewportHeight - 128.dp).coerceAtLeast(0.dp)),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            FaceButton(
+            Spacer(Modifier.height(8.dp))
+
+            // ── Hero：状态驱动的主视觉，点击连接/断开
+            val heroStyle = Settings.heroStyle
+            HeroButton(
                 status = status,
                 enabled = !busy,
-                faceSize = faceSize,
+                heroSize = heroSize,
+                style = heroStyle,
                 onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     if (running) viewModel.stopProxy() else onStart()
                 },
             )
 
-        Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(10.dp))
 
-        // RUNNING / CONNECTING / OFFLINE 小标签
-        Text(
-            when (status) {
-                Status.Started -> "RUNNING"
-                Status.Starting -> "CONNECTING"
-                Status.Stopping -> "DISCONNECTING"
-                Status.Stopped -> "OFFLINE"
-            },
-            color = when (status) {
-                Status.Started -> colors.primary
-                Status.Starting, Status.Stopping -> colors.warning
-                Status.Stopped -> colors.textTertiary
-            },
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = 2.sp,
-        )
-        Spacer(Modifier.height(2.dp))
-
-        val statusWord = when (status) {
-            Status.Starting -> "· 连接中"
-            Status.Started -> "· 已连接"
-            Status.Stopping -> "· 正在断开"
-            Status.Stopped -> "· 未连接"
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            AnimatedContent(
-                targetState = statusWord,
-                transitionSpec = {
-                    (slideInVertically(tween(Motion.DURATION_MEDIUM, easing = Motion.Ease)) { it / 3 } + fadeIn()) togetherWith
-                        (slideOutVertically(tween(Motion.DURATION_MEDIUM, easing = Motion.Ease)) { -it / 3 } + fadeOut())
-                },
-                label = "statusText",
-            ) { text ->
-                Text(
-                    text,
-                    color = if (running) colors.primary else colors.text,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.SemiBold,
+            // ── Kicker：状态胶囊 + 运行时长
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                StatusPill(
+                    text = when (status) {
+                        Status.Started -> "RUN"
+                        Status.Starting -> "CONNECTING"
+                        Status.Stopping -> "STOPPING"
+                        Status.Stopped -> "OFF"
+                    },
+                    color = when (status) {
+                        Status.Started -> colors.primary
+                        Status.Starting, Status.Stopping -> colors.warning
+                        Status.Stopped -> colors.textTertiary
+                    },
+                    active = running || status == Status.Starting,
                 )
+                if (running && connectedAt > 0L) {
+                    Text(
+                        formatElapsed(now - connectedAt),
+                        color = colors.textTertiary,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
             }
-            if (running && connectedAt > 0L) {
-                Text(
-                    " ${formatElapsed(now - connectedAt)}",
-                    color = colors.primary,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-        }
 
-        Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(10.dp))
 
-        // 节点名（大字）：未连接时变成「查看订阅」入口，均可点进节点/订阅页
-        val connected = status == Status.Started || status == Status.Starting
-        // connected but the groups snapshot has not arrived / resolved to a leaf
-        // yet — the core is still picking, so show an animated 选择中 instead of
-        // sitting on a bare "自动"
-        val resolvedNode = if (connected) nodeRowValue(groups, delays, mainGroup, storedSelected) else null
-        val picking = connected && (resolvedNode == "自动" || resolvedNode == "未选择")
-        val pickPulse by rememberInfiniteTransition(label = "pickPulse").animateFloat(
-            initialValue = 0.35f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                tween(650, easing = LinearEasing),
-                RepeatMode.Reverse,
-            ),
-            label = "pickAlpha",
-        )
-        Text(
-            when {
+            // ── 节点名（大字，自动缩放）：点击进入节点页
+            val connected = status == Status.Started || status == Status.Starting
+            val resolvedNode = if (connected) nodeRowValue(groups, delays, mainGroup, storedSelected) else null
+            val picking = connected && (resolvedNode == "自动" || resolvedNode == "未选择")
+            val pickPulse by rememberInfiniteTransition(label = "pickPulse").animateFloat(
+                initialValue = 0.35f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    tween(650, easing = LinearEasing),
+                    RepeatMode.Reverse,
+                ),
+                label = "pickAlpha",
+            )
+            val nodeTitle = when {
                 picking -> "选择中…"
                 connected -> resolvedNode ?: ""
                 else -> "查看订阅"
-            },
-            color = when {
-                picking -> colors.textTertiary
-                connected -> colors.text
-                else -> colors.accent
-            },
-            fontSize = 24.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .then(if (picking) Modifier.graphicsLayer { alpha = pickPulse } else Modifier)
-                .clip(RoundedCornerShape(8.dp))
-                .pressableClick { onOpenSubPage(SettingsSubPage.Proxies) }
-                .padding(horizontal = 12.dp, vertical = 4.dp),
-        )
-
-        if (running && mainGroup != null) {
-            val delay = delayOf(groups, delays)
-            val delayText = when {
-                delay <= 0 -> "测速中"
-                delay > 65000 -> "超时"
-                else -> "${delay} ms"
             }
-            val up = Libbox.formatBytes(speed.uplinkPerSecond)
-            val down = Libbox.formatBytes(speed.downlinkPerSecond)
-            val total = Libbox.formatBytes(speed.uplinkTotal + speed.downlinkTotal)
-            val protocol = currentLeafTag(groups, delays, mainGroup)?.let { protocolByTag[it] }
-
-            // 协议 · 延迟，点击触发测速
-            Spacer(Modifier.height(2.dp))
             Text(
-                listOfNotNull(protocol, delayText).joinToString(" · "),
-                color = colors.textTertiary,
-                fontSize = 13.sp,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable { viewModel.urlTest(ConfigBuilder.GROUP_TAG) }
-                    .padding(horizontal = 8.dp, vertical = 2.dp),
-            )
-            // 实时速率，大字
-            Spacer(Modifier.height(8.dp))
-            Text(
-                buildAnnotatedString {
-                    withStyle(SpanStyle(color = colors.primary)) { append("↓ ") }
-                    append("$down/s")
-                    append("    ")
-                    withStyle(SpanStyle(color = colors.danger)) { append("↑ ") }
-                    append("$up/s")
+                nodeTitle,
+                color = when {
+                    picking -> colors.textTertiary
+                    connected -> colors.text
+                    else -> colors.accent
                 },
-                color = colors.text,
-                fontSize = 20.sp,
+                fontSize = when {
+                    nodeTitle.length > 18 -> 18.sp
+                    nodeTitle.length > 12 -> 21.sp
+                    else -> 25.sp
+                },
                 fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .then(if (picking) Modifier.graphicsLayer { alpha = pickPulse } else Modifier)
+                    .clip(RoundedCornerShape(8.dp))
+                    .pressableClick { onOpenSubPage(SettingsSubPage.Proxies) }
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
             )
-            // 本次会话累计流量 · 连接数
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "Σ $total · $activeConnectionCount 连接",
-                color = colors.textTertiary,
-                fontSize = 13.sp,
-            )
-        } else {
-            Spacer(Modifier.height(4.dp))
-            Text(
-                when (status) {
-                    Status.Starting -> "正在建立隧道…"
-                    Status.Stopping -> "正在断开…"
-                    else -> "轻点表情以连接"
-                },
-                color = colors.textTertiary,
-                fontSize = 13.sp,
-            )
-        }
 
-        if (message != null) {
-            Spacer(Modifier.height(8.dp))
-            Text(message!!, color = colors.warning, fontSize = 13.sp)
-        }
+            // ── 协议 · 延迟（点击测速）
+            if (running && mainGroup != null) {
+                val delay = delayOf(groups, delays)
+                val delayText = when {
+                    delay <= 0 -> "测速中"
+                    delay > 65000 -> "超时"
+                    else -> "${delay} ms"
+                }
+                val protocol = currentLeafTag(groups, delays, mainGroup)?.let { protocolByTag[it] }
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    listOfNotNull(protocol, delayText).joinToString(" · "),
+                    color = colors.textTertiary,
+                    fontSize = 13.sp,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { viewModel.urlTest(ConfigBuilder.GROUP_TAG) }
+                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                )
+            } else {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    when (status) {
+                        Status.Starting -> "正在建立隧道…"
+                        Status.Stopping -> "正在断开…"
+                        else -> "轻点图标以连接"
+                    },
+                    color = colors.textTertiary,
+                    fontSize = 13.sp,
+                )
+            }
 
-        Spacer(Modifier.height(24.dp))
-        }
+            Spacer(Modifier.height(16.dp))
+
+            // ── 快速控制：路由模式 + 自动选择
+            val routingMode = if (running) clashMode.current else Settings.outboundMode.name.lowercase()
+            val routingIndex = when (routingMode) {
+                "global" -> 1
+                "direct" -> 2
+                else -> 0
+            }
+            val currentSel = mainGroup?.selected?.takeIf { it.isNotBlank() } ?: storedSelected
+            val autoIndex = if (currentSel == ConfigBuilder.AUTO_TAG || currentSel.isBlank()) 1 else 0
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(modifier = Modifier.weight(1.15f)) {
+                    InstrumentCaption("路由")
+                    SegmentedControl(
+                        items = listOf("规则", "全局", "直连"),
+                        selected = routingIndex,
+                        onSelect = { i ->
+                            viewModel.setClashMode(listOf("rule", "global", "direct")[i])
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    InstrumentCaption("选择")
+                    SegmentedControl(
+                        items = listOf("手动", "内核"),
+                        selected = autoIndex,
+                        onSelect = { i ->
+                            if (i == 1) {
+                                viewModel.selectNode(ConfigBuilder.GROUP_TAG, ConfigBuilder.AUTO_TAG)
+                            } else {
+                                pickConcreteNode(
+                                    viewModel = viewModel,
+                                    groups = groups,
+                                    storedAuto = currentSel == ConfigBuilder.AUTO_TAG,
+                                    subscriptions = subscriptions,
+                                    activeSubscriptionId = activeSubscriptionId,
+                                    mixEnabled = mixEnabled,
+                                    mixSubscriptionIds = mixSubscriptionIds,
+                                    noCandidates = { onOpenSubPage(SettingsSubPage.Proxies) },
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // ── 主操作：连接/断开 + 切换节点
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                GlassButton(
+                    text = when {
+                        running -> "断开连接"
+                        status == Status.Starting -> "连接中…"
+                        else -> "连接"
+                    },
+                    style = if (running) GlassButtonStyle.Danger else GlassButtonStyle.Primary,
+                    enabled = !busy && status != Status.Starting,
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        if (running) viewModel.stopProxy() else onStart()
+                    },
+                    modifier = Modifier.weight(1.2f),
+                )
+                GlassButton(
+                    text = "切换节点",
+                    style = GlassButtonStyle.Secondary,
+                    onClick = { onOpenSubPage(SettingsSubPage.Proxies) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // ── 仪表网格：核心 / 流量曲线 / 网络探测 / 订阅
+            val down = Libbox.formatBytes(speed.downlinkPerSecond)
+            val up = Libbox.formatBytes(speed.uplinkPerSecond)
+            val total = Libbox.formatBytes(speed.uplinkTotal + speed.downlinkTotal)
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                InstrumentCard(
+                    caption = "核心",
+                    onClick = { onOpenSubPage(SettingsSubPage.Logs) },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(
+                        if (running && connectedAt > 0L) formatElapsed(now - connectedAt) else "—",
+                        color = colors.text,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "$CORE_VERSION · $activeConnectionCount 连接",
+                        color = colors.textTertiary,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                InstrumentCard(
+                    caption = "流量",
+                    onClick = { onOpenSubPage(SettingsSubPage.Connections) },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    TrafficSparkline(
+                        history = history,
+                        downColor = colors.success,
+                        upColor = colors.danger,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(42.dp),
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "↓ $down/s  ↑ $up/s",
+                        color = colors.textSecondary,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                    )
+                    Text(
+                        "Σ $total",
+                        color = colors.textTertiary,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                InstrumentCard(
+                    caption = "出口网络",
+                    onClick = { viewModel.probeNetwork() },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    when (val p = probe) {
+                        ProbeState.Running -> Text(
+                            "探测中…",
+                            color = colors.textTertiary,
+                            fontSize = 15.sp,
+                            fontFamily = FontFamily.Monospace,
+                        )
+
+                        is ProbeState.Done -> Column {
+                            Text(
+                                p.result.ip,
+                                color = colors.text,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                fontFamily = FontFamily.Monospace,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                listOfNotNull(
+                                    p.result.country,
+                                    "${p.result.latencyMs} ms",
+                                    if (p.result.viaProxy) "经代理" else "直连",
+                                ).joinToString(" · "),
+                                color = colors.textTertiary,
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+
+                        is ProbeState.Failed -> Text(
+                            "探测失败 · 点击重试",
+                            color = colors.warning,
+                            fontSize = 12.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+
+                        ProbeState.Idle -> Text(
+                            "点击检测出口 IP",
+                            color = colors.textTertiary,
+                            fontSize = 13.sp,
+                        )
+                    }
+                }
+                InstrumentCard(
+                    caption = "订阅",
+                    onClick = { onOpenSubPage(SettingsSubPage.Proxies) },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    val activeSub = subscriptions.find { it.id == activeSubscriptionId }
+                    val quotaSubs = if (mixEnabled) {
+                        subscriptions.filter { it.id in mixSubscriptionIds }
+                    } else {
+                        listOfNotNull(activeSub)
+                    }
+                    val pool = remember(quotaSubs) { quotaSubs.sumOf { it.nodes.size } }
+                    val used = quotaSubs.sumOf { it.uploadBytes + it.downloadBytes }
+                    val totalBytes = quotaSubs.sumOf { it.totalBytes }
+                    val label = when {
+                        mixEnabled && quotaSubs.isNotEmpty() -> "Mix · ${quotaSubs.size} 订阅"
+                        activeSub != null -> activeSub.name
+                        else -> "未添加"
+                    }
+                    Text(
+                        label,
+                        color = colors.text,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    if (totalBytes > 0) {
+                        val fraction = (used.toFloat() / totalBytes).coerceIn(0f, 1f)
+                        val barColor = when {
+                            fraction >= 0.9f -> colors.danger
+                            fraction >= 0.7f -> colors.warning
+                            else -> colors.primary
+                        }
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(5.dp)
+                                .clip(RoundedCornerShape(50))
+                                .background(colors.bgDeep),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(fraction)
+                                    .height(5.dp)
+                                    .clip(RoundedCornerShape(50))
+                                    .background(barColor),
+                            )
+                        }
+                        Spacer(Modifier.height(5.dp))
+                    }
+                    Text(
+                        "$pool 节点" + if (totalBytes > 0) {
+                            " · ${Libbox.formatBytes(used)} / ${Libbox.formatBytes(totalBytes)}"
+                        } else {
+                            ""
+                        },
+                        color = colors.textTertiary,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+
+            if (message != null) {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    message!!,
+                    color = colors.warning,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(bottom = 12.dp),
+                )
+            } else {
+                Spacer(Modifier.height(20.dp))
+            }
         }
     }
 }
 
+/** 玻璃圆角图标按钮（顶栏）。 */
 @Composable
-private fun FaceButton(
+private fun GlassIconButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    val colors = LocalInterstellarColors.current
+    val light = 0.2126f * colors.bg.red + 0.7152f * colors.bg.green + 0.0722f * colors.bg.blue > 0.5f
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .glassSurface(50.dp, light, colors.panelTop, colors.panelBottom, colors.border)
+            .pressableClick(onClick),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = colors.textSecondary,
+            modifier = Modifier.size(19.dp),
+        )
+    }
+}
+
+@Composable
+private fun InstrumentCaption(text: String) {
+    val colors = LocalInterstellarColors.current
+    Text(
+        text,
+        color = colors.textTertiary,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Medium,
+        letterSpacing = 1.sp,
+        modifier = Modifier.padding(start = 12.dp, bottom = 6.dp),
+    )
+}
+
+/** 遥测卡：玻璃卡 + 左上小标签。 */
+@Composable
+private fun InstrumentCard(
+    caption: String,
+    onClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    val colors = LocalInterstellarColors.current
+    GlassCard(
+        modifier = modifier
+            .heightIn(min = 104.dp)
+            .fillMaxWidth(),
+        onClick = onClick,
+        contentPadding = 12.dp,
+    ) {
+        Text(
+            caption,
+            color = colors.textTertiary,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium,
+            letterSpacing = 1.sp,
+        )
+        Spacer(Modifier.height(8.dp))
+        content()
+    }
+}
+
+/** Hero：笑脸或轨道样式，按压缩放。 */
+@Composable
+private fun HeroButton(
     status: Status,
     enabled: Boolean,
-    faceSize: Dp,
+    heroSize: Dp,
+    style: String,
     onClick: () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -392,12 +674,12 @@ private fun FaceButton(
     val scale by animateFloatAsState(
         targetValue = if (pressed) 0.96f else 1f,
         animationSpec = Motion.snappy(),
-        label = "faceScale",
+        label = "heroScale",
     )
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
-            .size(faceSize)
+            .size(heroSize)
             .scale(scale)
             .clickable(
                 interactionSource = interaction,
@@ -406,7 +688,42 @@ private fun FaceButton(
                 onClick = onClick,
             ),
     ) {
-        FaceMark(status = status, faceSize = faceSize)
+        if (style == "orbit") {
+            OrbitHero(status = status, heroSize = heroSize)
+        } else {
+            FaceMark(status = status, faceSize = heroSize)
+        }
+    }
+}
+
+/** 切回手动时挑一个具体节点：优先当前解析的叶子，其次池内第一个。 */
+private fun pickConcreteNode(
+    viewModel: AppViewModel,
+    groups: List<OutboundGroup>,
+    storedAuto: Boolean,
+    subscriptions: List<SubscriptionRepository.Subscription>,
+    activeSubscriptionId: String,
+    mixEnabled: Boolean,
+    mixSubscriptionIds: Set<String>,
+    noCandidates: () -> Unit,
+) {
+    if (!storedAuto) return // 已经是手动
+    val mainGroup = groups.find { it.tag == ConfigBuilder.GROUP_TAG }
+    val candidate = mainGroup?.let { groupItems(it) }
+        ?.firstOrNull { it.tag != ConfigBuilder.AUTO_TAG && it.tag != ConfigBuilder.GROUP_TAG }?.tag
+        ?: run {
+            val pool = SubscriptionRepository.poolOf(
+                subscriptions,
+                activeSubscriptionId,
+                mixEnabled,
+                mixSubscriptionIds,
+            )
+            ConfigBuilder.tagsFor(pool).firstOrNull { it != ConfigBuilder.AUTO_TAG }
+        }
+    if (candidate != null) {
+        viewModel.selectNode(ConfigBuilder.GROUP_TAG, candidate)
+    } else {
+        noCandidates()
     }
 }
 

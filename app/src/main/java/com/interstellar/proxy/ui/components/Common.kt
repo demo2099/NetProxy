@@ -1,10 +1,7 @@
 package com.interstellar.proxy.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -17,27 +14,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.interstellar.proxy.ui.theme.LocalInterstellarColors
 
-/** Glass panel card, Compose counterpart of interstellar's .card. */
-@Composable
-fun GlassCard(
-    modifier: Modifier = Modifier,
-    cornerRadius: Dp = 16.dp,
-    contentPadding: Dp = 16.dp,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    val colors = LocalInterstellarColors.current
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(cornerRadius))
-            .background(colors.panel)
-            .border(1.dp, colors.border, RoundedCornerShape(cornerRadius)),
-    ) {
-        Column(
-            modifier = Modifier.padding(contentPadding),
-            content = content,
-        )
-    }
-}
+// GlassCard now lives in GlassComponents.kt (glass material, satelite style).
 
 /** Small status dot with glow — mirrors the RUN/OFF indicator. */
 @Composable

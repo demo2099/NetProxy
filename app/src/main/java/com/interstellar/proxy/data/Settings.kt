@@ -222,7 +222,15 @@ object Settings {
             commit()
         }
 
-    /** Homepage face halo color, a macaron palette id (see ui.theme.GlowPalette). */
+    /** Homepage hero visual: "smiley" (FaceMark, default) or "orbit". */
+    var heroStyle: String
+        get() = properties.getProperty("heroStyle", "smiley")
+        set(value) {
+            properties.setProperty("heroStyle", value)
+            commit()
+        }
+
+    /** Legacy key from the pre-glow era; the macaron accent (see ui.theme.Accents) replaced it. */
     var glowColorId: String
         get() = properties.getProperty("glowColorId", "matcha")
         set(value) {

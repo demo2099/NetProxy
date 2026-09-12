@@ -57,7 +57,7 @@ fun Modifier.iosPressable(onClick: () -> Unit): Modifier = composed {
         .alpha(alpha)
 }
 
-/** iOS inset-group card. */
+/** Inset group card, now rendered as a glass surface. */
 @Composable
 fun IosCard(
     modifier: Modifier = Modifier,
@@ -65,24 +65,22 @@ fun IosCard(
 ) {
     val colors = LocalInterstellarColors.current
     val light = colors.bg.luminance() > 0.5f
-    // order matters: shadow BEFORE clip/background, otherwise it renders
-    // as a solid gray frame around the card
     Box(
         modifier = modifier
             .then(
                 if (light) {
                     Modifier.shadow(
-                        1.5.dp,
-                        RoundedCornerShape(12.dp),
+                        6.dp,
+                        RoundedCornerShape(16.dp),
                         ambientColor = Color(0x14000000),
-                        spotColor = Color(0x14000000),
+                        spotColor = Color(0x1A000000),
                     )
                 } else {
                     Modifier
                 },
             )
-            .clip(RoundedCornerShape(12.dp))
-            .background(colors.panel),
+            .clip(RoundedCornerShape(16.dp))
+            .glassSurface(16.dp, light, colors.panelTop, colors.panelBottom, colors.border),
     ) {
         content()
     }

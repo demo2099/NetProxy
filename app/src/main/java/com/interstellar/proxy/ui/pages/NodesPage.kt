@@ -3,6 +3,7 @@ package com.interstellar.proxy.ui.pages
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,6 +51,7 @@ import com.interstellar.proxy.data.config.ConfigBuilder
 import com.interstellar.proxy.ui.AppViewModel
 import com.interstellar.proxy.ui.components.IosSwitch
 import com.interstellar.proxy.ui.components.SegmentedControl
+import com.interstellar.proxy.ui.components.glassSurface
 import com.interstellar.proxy.ui.components.pressableClick
 import com.interstellar.proxy.ui.theme.LocalInterstellarColors
 
@@ -386,11 +388,20 @@ private fun NodeRow(
     onLongPress: () -> Unit,
 ) {
     val colors = LocalInterstellarColors.current
+    val light = 0.2126f * colors.bg.red + 0.7152f * colors.bg.green + 0.0722f * colors.bg.blue > 0.5f
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (selected) colors.primaryMuted else colors.panel)
+            .clip(RoundedCornerShape(14.dp))
+            .then(
+                if (selected) {
+                    Modifier
+                        .background(colors.primaryMuted)
+                        .border(1.dp, colors.primaryBorder, RoundedCornerShape(14.dp))
+                } else {
+                    Modifier.glassSurface(14.dp, light, colors.panelTop, colors.panelBottom, colors.border)
+                },
+            )
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongPress,
@@ -440,12 +451,21 @@ private fun NodeGridCell(
     onLongPress: () -> Unit,
 ) {
     val colors = LocalInterstellarColors.current
+    val light = 0.2126f * colors.bg.red + 0.7152f * colors.bg.green + 0.0722f * colors.bg.blue > 0.5f
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(92.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (selected) colors.primaryMuted else colors.panel)
+            .clip(RoundedCornerShape(14.dp))
+            .then(
+                if (selected) {
+                    Modifier
+                        .background(colors.primaryMuted)
+                        .border(1.dp, colors.primaryBorder, RoundedCornerShape(14.dp))
+                } else {
+                    Modifier.glassSurface(14.dp, light, colors.panelTop, colors.panelBottom, colors.border)
+                },
+            )
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongPress,
@@ -536,13 +556,13 @@ fun DelayBadge(delay: Int, modifier: Modifier = Modifier) {
     val colors = LocalInterstellarColors.current
     val (text, color) = when {
         delay <= 0 -> "未测" to colors.textTertiary
-        delay <= 300 -> "${delay}ms" to colors.primary
-        delay <= 800 -> "${delay}ms" to colors.warning
+        delay < 200 -> "${delay}ms" to colors.success
+        delay < 300 -> "${delay}ms" to colors.warning
         else -> "${delay}ms" to colors.danger
     }
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(50))
             .background(color.copy(alpha = 0.12f))
             .padding(horizontal = 8.dp, vertical = 3.dp),
     ) {

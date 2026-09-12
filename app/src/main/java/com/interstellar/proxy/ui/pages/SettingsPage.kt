@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -50,7 +51,7 @@ import com.interstellar.proxy.ui.components.IosSectionLabel
 import com.interstellar.proxy.ui.components.IosToggleRow
 import com.interstellar.proxy.ui.components.SegmentedControl
 import com.interstellar.proxy.ui.components.pressableClick
-import com.interstellar.proxy.ui.theme.GlowPalette
+import com.interstellar.proxy.ui.theme.Accents
 import com.interstellar.proxy.ui.theme.LocalInterstellarColors
 
 private var onThemeChanged: (() -> Unit)? = null
@@ -121,9 +122,36 @@ fun SettingsPage(onOpen: (SettingsSubPage) -> Unit, onProxyChanged: () -> Unit =
                             .padding(top = 12.dp),
                     ) {
                         Column {
-                            Text("背景光晕", color = colors.text, fontSize = 17.sp)
+                            Text("主视觉", color = colors.text, fontSize = 17.sp)
                             Text(
-                                "光晕与已连接笑脸线条颜色",
+                                "首页连接图标的样式",
+                                color = colors.textTertiary,
+                                fontSize = 13.sp,
+                            )
+                        }
+                        Spacer(Modifier.weight(1f))
+                        var heroStyle by remember { mutableStateOf(Settings.heroStyle) }
+                        SegmentedControl(
+                            items = listOf("笑脸", "轨道"),
+                            selected = if (heroStyle == "orbit") 1 else 0,
+                            onSelect = { index ->
+                                heroStyle = if (index == 1) "orbit" else "smiley"
+                                Settings.heroStyle = heroStyle
+                            },
+                            modifier = Modifier.width(132.dp),
+                        )
+                    }
+                    IosHairline(startInset = 0.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 12.dp),
+                    ) {
+                        Column {
+                            Text("主题色", color = colors.text, fontSize = 17.sp)
+                            Text(
+                                "马卡龙色板,整套界面与光晕随之换肤",
                                 color = colors.textTertiary,
                                 fontSize = 13.sp,
                             )
@@ -133,10 +161,10 @@ fun SettingsPage(onOpen: (SettingsSubPage) -> Unit, onProxyChanged: () -> Unit =
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            GlowPalette.options.forEach { option ->
-                                GlowSwatch(
-                                    option = option,
-                                    selected = GlowPalette.selectedId == option.id,
+                            Accents.presets.forEach { preset ->
+                                AccentSwatch(
+                                    preset = preset,
+                                    selected = Accents.selectedId == preset.id,
                                 )
                             }
                         }
@@ -314,7 +342,7 @@ fun SettingsPage(onOpen: (SettingsSubPage) -> Unit, onProxyChanged: () -> Unit =
             }
             IosCard(modifier = Modifier.fillMaxWidth()) {
                 Column {
-                    IosRow(icon = Icons.Filled.Info, iconBg = colors.iconGray, title = "版本", value = "0.2.0", showChevron = false)
+                    IosRow(icon = Icons.Filled.Info, iconBg = colors.iconGray, title = "版本", value = "0.3.0", showChevron = false)
                     IosHairline(startInset = 57.dp)
                     IosRow(icon = Icons.Filled.Repeat, iconBg = colors.iconPurple, title = "内核", value = "sing-box 1.14.0", showChevron = false)
                 }
@@ -325,24 +353,25 @@ fun SettingsPage(onOpen: (SettingsSubPage) -> Unit, onProxyChanged: () -> Unit =
     }
 }
 
-/** Macaron color dot for the glow picker; selected one grows and gains a ring. */
+/** Macaron accent dot; the selected one grows and gains a ring. */
 @Composable
-private fun GlowSwatch(option: GlowPalette.Option, selected: Boolean) {
+private fun AccentSwatch(preset: Accents.Preset, selected: Boolean) {
     val colors = LocalInterstellarColors.current
     val scale by animateFloatAsState(
         targetValue = if (selected) 1.2f else 1f,
         animationSpec = spring(dampingRatio = 0.7f, stiffness = 420f),
-        label = "glowSwatchScale",
+        label = "accentSwatchScale",
     )
     val ringAlpha by animateFloatAsState(
         targetValue = if (selected) 1f else 0f,
         animationSpec = tween(160),
-        label = "glowSwatchRing",
+        label = "accentSwatchRing",
     )
+    val light = 0.2126f * colors.bg.red + 0.7152f * colors.bg.green + 0.0722f * colors.bg.blue > 0.5f
     Box(
         modifier = Modifier
             .size(32.dp)
-            .pressableClick { GlowPalette.select(option.id) },
+            .pressableClick { Accents.select(preset.id) },
         contentAlignment = Alignment.Center,
     ) {
         Box(
@@ -360,7 +389,7 @@ private fun GlowSwatch(option: GlowPalette.Option, selected: Boolean) {
                     scaleY = scale
                 }
                 .clip(CircleShape)
-                .background(GlowPalette.preview(option, colors.bg)),
+                .background(if (light) preset.light else preset.dark),
         )
     }
 }

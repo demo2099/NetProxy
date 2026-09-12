@@ -6,13 +6,13 @@
 
 **星河漫漫， 穿越光年。**
 
-Android 7.0+ · v0.2.0 · Kotlin + Jetpack Compose
+Android 7.0+ · v0.3.0 · Kotlin + Jetpack Compose
 
 </div>
 
 > 图标是一家之主汉克——星际穿越的唯一主题就是回家。
 
-Android 上的 sing-box 代理客户端。UI 采用 iOS 系统设计语言：极简、聚焦、单一强调色、分组内嵌列表、大按钮即应用。
+Android 上的 sing-box 代理客户端。UI 采用「航空航天玻璃 + 任务控制台」设计语言（参考 satelite-proxy）：深空底色、玻璃拟态卡片、环境光晕、马卡龙主题色、状态驱动 Hero 与遥测仪表网格。
 
 <div align="center">
 <img src="assets/app.jpg" width="300" alt="应用截图" />
@@ -60,8 +60,13 @@ Android 上的 sing-box 代理客户端。UI 采用 iOS 系统设计语言：极
 
 ### 界面与交互
 
-- **iOS 设计语言**：跟随系统深浅色、单一强调色、分组内嵌列表、iOS 开关/分段控件（灰轨白滑块）、大标题层级、推入式子页导航
-- **首页**：状态标签 + 大字节点名 + 速率面板 + 笑脸表情（闲置动画：眨眼/呼吸）、马卡龙六色光晕（抹茶/蜜桃/香芋/湖蓝/柠檬/晚霞，默认抹茶，切换带过渡动画并持久化）、左滑进设置
+- **玻璃控制台设计语言**（参考 satelite-proxy）：航空航天深空底色（#11141C / #EEF0F4）、半透明玻璃卡片（左上高光渐变 + 发丝描边）、全屏 accent 环境光晕、胶囊按钮/磨砂分段控件、跟随系统深浅色
+- **马卡龙主题色**：薄荷/天蓝/香芋/蜜桃/奶橙/湖青六色预设，一个 accent 换肤整套 UI（含光晕与 Hero）；语义色不随 accent（下载绿/上传红、警告金、危险橙）
+- **状态驱动 Hero**：Face ID 笑脸（眨眼/呼吸/嘴角随连接状态变化）或经典轨道（同心圆环 + 轨道卫星，运行时旋转）双样式可切换
+- **任务控制台首页**：RUN/OFF 状态胶囊 + 大字节点名（字号自适应）+ 快速控制（路由 规则/全局/直连、选择 手动/内核）+ 胶囊主操作按钮 + 遥测仪表网格（核心运行时长、实时流量曲线、出口网络探测、订阅额度）
+- **网络探测**：一键竞速多个公共 IP API（经代理时走当前节点出口），显示出口 IP/地区/延迟，连接后自动探测
+- **延迟色阶**：绿 <200ms / 黄 <300ms / 红，全局统一
+- **左滑进设置**、玻璃胶囊子页标题栏
 - **通知卡片**：标题「星河漫漫 · 穿越光年」，VPN 系统名「星际穿越」
 - **连接监控**：活跃连接实时列表（域名/规则/链路/速率），单条/全部断开
 - **日志页**：内核日志实时流 + 一键复制导出
@@ -83,14 +88,14 @@ app/src/main/java/com/interstellar/proxy/
 │   ├── model/             # ProxyNode（统一节点模型）/ CustomRouteRule
 │   ├── subscription/      # SubscriptionParser（嗅探）/ ClashParser / UriParser / SingboxOutboundConverter
 │   ├── config/ConfigBuilder.kt  # sing-box JSON 生成（对应桌面端 builder.rs/dns_build.rs）
-│   ├── net/SubscriptionFetcher.kt
+│   ├── net/SubscriptionFetcher.kt / NetProbe.kt（出口 IP 竞速探测）
 │   ├── SubscriptionRepository.kt / UpdateWorker.kt（定时更新）
 │   ├── CustomRulesStore.kt / RulesStore.kt / NodeMatcher.kt
 │   └── Settings.kt / ConfigStore.kt
 ├── ui/
-│   ├── theme/             # Theme.kt（深浅色）/ GlowPalette.kt（光晕马卡龙色）/ Motion.kt
+│   ├── theme/             # Theme.kt（航空航天玻璃深浅色）/ Accents.kt（马卡龙 accent）/ Motion.kt
 │   ├── AppViewModel.kt    # CommandClient 状态/组/模式订阅 + 业务动作
-│   ├── components/        # IosComponents / FaceMark（笑脸）/ MotionComponents
+│   ├── components/        # GlassComponents（玻璃卡/胶囊按钮/状态胶囊/流量曲线/轨道 Hero）/ FaceMark（笑脸）/ IosComponents / MotionComponents / AmbientGlow
 │   └── pages/             # Dashboard（首页）/ Proxies（节点+订阅双 tab）/ Connections / Logs / Settings / PerAppProxy / CustomRules
 └── utils/                 # CommandClient / CommandTarget
 ```
@@ -127,6 +132,7 @@ app/src/main/java/com/interstellar/proxy/
 - [ ] 智能切换（移植 smart_switch.rs）
 - [x] 订阅自动更新（WorkManager）
 - [x] 分流规则自定义（域名 → 节点关键词）
+- [x] 玻璃控制台 UI 重设计（参考 satelite-proxy：玻璃拟态 + 仪表网格 + 马卡龙 accent + 流量曲线 + 网络探测 + 路由快速切换）
 
 ## 致谢
 

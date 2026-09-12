@@ -10,35 +10,39 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 
 /**
- * iOS system design language.
- * One accent (system green — "connected / go"), grouped-list surfaces,
- * label hierarchy via typography, no decoration.
+ * "Aerospace glass + mission console" design language, ported from
+ * satelite-proxy: a deep-space blue base with translucent glass surfaces,
+ * one macaron accent re-skinning the whole UI, and semantic colors that
+ * never follow the accent (down=green, up=red, warning gold, danger orange).
  *
  * Field names kept from the previous interstellar system so existing
- * screens restyle automatically.
+ * screens restyle automatically; new glass tokens extend it.
  */
 @Immutable
 data class InterstellarColors(
-    val bg: Color,            // grouped background: #F2F2F7 / pure black
-    val bgDeep: Color,        // track / chip gray: #E9E9EE / #2C2C2E
+    val bg: Color,            // aerospace #11141C / day #EEF0F4
+    val bgDeep: Color,        // segment track / chip well
     val text: Color,          // label
-    val textSecondary: Color, // secondary label #3C3C4399 / #EBEBF599
+    val textSecondary: Color, // secondary label
     val textTertiary: Color,  // tertiary label
-    val panel: Color,         // inset group card: white / #1C1C1E
-    val panelSolid: Color,
-    val border: Color,        // hairline separator
-    val primary: Color,       // system green
+    val panel: Color,         // glass surface base (translucent)
+    val panelTop: Color,      // glass fill gradient stop, lit upper-left
+    val panelBottom: Color,   // glass fill gradient stop
+    val surfaceHigh: Color,   // elevated glass: segment thumb, pressed states
+    val panelSolid: Color,    // opaque panel for modals & menus
+    val border: Color,        // hairline glass border
+    val primary: Color,       // accent (macaron preset)
     val primaryHover: Color,
-    val primaryMuted: Color,  // green 12%
+    val primaryMuted: Color,
     val primaryGlow: Color,
     val primaryBorder: Color,
     val onPrimary: Color,
-    val danger: Color,        // system red
+    val danger: Color,        // fixed orange — stop / upload direction
     val dangerMuted: Color,
-    val warning: Color,       // system orange
+    val warning: Color,       // fixed gold
     val warningMuted: Color,
-    val success: Color,
-    /** iOS blue — links & chevrons. */
+    val success: Color,       // fixed green — direct / download direction
+    /** Fixed info blue — links, chevrons, connecting scan. */
     val accent: Color,
     /** colored icon squares in settings rows. */
     val iconBlue: Color,
@@ -49,66 +53,76 @@ data class InterstellarColors(
     val iconRed: Color,
 )
 
-fun interstellarColors(dark: Boolean, @Suppress("UNUSED_PARAMETER") accentId: String?): InterstellarColors {
+fun interstellarColors(dark: Boolean, accentId: String?): InterstellarColors {
+    val primary = Accents.normalizeForTheme(Accents.current(dark), dark)
+    val onPrimary = if (0.2126f * primary.red + 0.7152f * primary.green + 0.0722f * primary.blue >= 0.45f) {
+        Color(0xFF0A1210)
+    } else {
+        Color.White
+    }
     return if (dark) {
-        val green = Color(0xFF30D158)
         InterstellarColors(
-            bg = Color(0xFF000000),
-            bgDeep = Color(0xFF2C2C2E),
-            text = Color(0xFFFFFFFF),
-            textSecondary = Color(0xFFD6D6DE),
-            textTertiary = Color(0xFF9E9EA8),
-            panel = Color(0xFF1C1C1E),
-            panelSolid = Color(0xFF1C1C1E),
-            border = Color(0xFF38383A),
-            primary = green,
-            primaryHover = Color(0xFF4ADE80),
-            primaryMuted = green.copy(alpha = 0.14f),
-            primaryGlow = green.copy(alpha = 0.22f),
-            primaryBorder = green.copy(alpha = 0.35f),
-            onPrimary = Color.White,
-            danger = Color(0xFFFF453A),
-            dangerMuted = Color(0x26FF453A),
-            warning = Color(0xFFFFB340),
-            warningMuted = Color(0x26FF9F0A),
-            success = green,
-            accent = Color(0xFF0A84FF),
-            iconBlue = Color(0xFF0A84FF),
-            iconGreen = Color(0xFF30D158),
-            iconGray = Color(0xFF8E8E93),
-            iconOrange = Color(0xFFFF9F0A),
-            iconPurple = Color(0xFFBF5AF2),
-            iconRed = Color(0xFFFF453A),
+            bg = Color(0xFF11141C),
+            bgDeep = Color(0xFF1B2130),
+            text = Color(0xFFF2F4F8),
+            textSecondary = Color(0xFFC3C9D9),
+            textTertiary = Color(0xFF8A93A8),
+            panel = Color(0x09FFFFFF),
+            panelTop = Color(0x17FFFFFF),
+            panelBottom = Color(0x08FFFFFF),
+            surfaceHigh = Color(0x24FFFFFF),
+            panelSolid = Color(0xFF1A1F2C),
+            border = Color(0x16FFFFFF),
+            primary = primary,
+            primaryHover = primary.copy(alpha = 0.82f),
+            primaryMuted = primary.copy(alpha = 0.14f),
+            primaryGlow = primary.copy(alpha = 0.30f),
+            primaryBorder = primary.copy(alpha = 0.35f),
+            onPrimary = onPrimary,
+            danger = Color(0xFFD68B58),
+            dangerMuted = Color(0x2ED68B58),
+            warning = Color(0xFFC6A25F),
+            warningMuted = Color(0x29C6A25F),
+            success = Color(0xFF55C89A),
+            accent = Color(0xFF5FA8F5),
+            iconBlue = Color(0xFF5FA8F5),
+            iconGreen = Color(0xFF55C89A),
+            iconGray = Color(0xFF8A93A8),
+            iconOrange = Color(0xFFF2B063),
+            iconPurple = Color(0xFFB49AF0),
+            iconRed = Color(0xFFE8836F),
         )
     } else {
-        val green = Color(0xFF34C759)
         InterstellarColors(
-            bg = Color(0xFFF2F2F7),
-            bgDeep = Color(0xFFE9E9EE),
-            text = Color(0xFF000000),
-            textSecondary = Color(0xFF44444B),
-            textTertiary = Color(0xFF6D6D75),
-            panel = Color(0xFFFFFFFF),
-            panelSolid = Color(0xFFFFFFFF),
-            border = Color(0xFFE5E5EA),
-            primary = green,
-            primaryHover = Color(0xFF35BA5D),
-            primaryMuted = green.copy(alpha = 0.12f),
-            primaryGlow = green.copy(alpha = 0.18f),
-            primaryBorder = green.copy(alpha = 0.30f),
-            onPrimary = Color.White,
-            danger = Color(0xFFE5342A),
-            dangerMuted = Color(0x1FFF3B30),
-            warning = Color(0xFFFF9500),
-            warningMuted = Color(0x1FFF9500),
-            success = green,
-            accent = Color(0xFF007AFF),
-            iconBlue = Color(0xFF007AFF),
-            iconGreen = Color(0xFF34C759),
-            iconGray = Color(0xFF8E8E93),
-            iconOrange = Color(0xFFFF9500),
-            iconPurple = Color(0xFFAF52DE),
-            iconRed = Color(0xFFFF3B30),
+            bg = Color(0xFFEEF0F4),
+            bgDeep = Color(0xFFDFE3EC),
+            text = Color(0xFF171B26),
+            textSecondary = Color(0xFF3D4454),
+            textTertiary = Color(0xFF6E7687),
+            panel = Color(0x8CFFFFFF),
+            panelTop = Color(0xC7FFFFFF),
+            panelBottom = Color(0x66FFFFFF),
+            surfaceHigh = Color(0xEBFFFFFF),
+            panelSolid = Color(0xFFFBFCFE),
+            border = Color(0xA6FFFFFF),
+            primary = primary,
+            primaryHover = primary.copy(alpha = 0.86f),
+            primaryMuted = primary.copy(alpha = 0.12f),
+            primaryGlow = primary.copy(alpha = 0.20f),
+            primaryBorder = primary.copy(alpha = 0.30f),
+            onPrimary = onPrimary,
+            danger = Color(0xFFC2552E),
+            dangerMuted = Color(0x24C2552E),
+            warning = Color(0xFF8F6D2A),
+            warningMuted = Color(0x1F8F6D2A),
+            success = Color(0xFF1F9A72),
+            accent = Color(0xFF2C6FAE),
+            iconBlue = Color(0xFF3D7DC8),
+            iconGreen = Color(0xFF1F9A72),
+            iconGray = Color(0xFF6E7687),
+            iconOrange = Color(0xFFC98A3D),
+            iconPurple = Color(0xFF7E5CD6),
+            iconRed = Color(0xFFC2552E),
         )
     }
 }
@@ -117,7 +131,7 @@ val LocalInterstellarColors = staticCompositionLocalOf { interstellarColors(dark
 
 @Composable
 fun InterstellarTheme(
-    themeMode: String = "system", // system | light | dark (legacy: aerospace/day)
+    themeMode: String = "system", // system | light | dark
     accentId: String? = null,
     content: @Composable () -> Unit,
 ) {
@@ -135,8 +149,10 @@ fun InterstellarTheme(
         controller.isAppearanceLightNavigationBars = !dark
         @Suppress("DEPRECATION")
         runCatching {
-            window.statusBarColor = interstellarColors(dark, accentId).bg.toArgb()
-            window.navigationBarColor = interstellarColors(dark, accentId).bg.toArgb()
+            interstellarColors(dark, accentId).bg.toArgb().let {
+                window.statusBarColor = it
+                window.navigationBarColor = it
+            }
         }
     }
 
@@ -145,7 +161,9 @@ fun InterstellarTheme(
         bg = animateC(target.bg), bgDeep = animateC(target.bgDeep),
         text = animateC(target.text), textSecondary = animateC(target.textSecondary),
         textTertiary = animateC(target.textTertiary),
-        panel = animateC(target.panel), panelSolid = animateC(target.panelSolid),
+        panel = animateC(target.panel), panelTop = animateC(target.panelTop),
+        panelBottom = animateC(target.panelBottom), surfaceHigh = animateC(target.surfaceHigh),
+        panelSolid = animateC(target.panelSolid),
         border = animateC(target.border),
         primary = animateC(target.primary), primaryHover = animateC(target.primaryHover),
         primaryMuted = animateC(target.primaryMuted), primaryGlow = animateC(target.primaryGlow),

@@ -1,0 +1,398 @@
+package com.interstellar.proxy.ui.components
+
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.interstellar.proxy.constant.Status
+import com.interstellar.proxy.ui.theme.LocalInterstellarColors
+import com.interstellar.proxy.ui.theme.Motion
+
+/**
+ * Glass material, ported from satelite-proxy's `.glass` recipe:
+ * translucent gradient fill lit from the upper-left, hairline border,
+ * pill-safe rounded corners; soft shadow on the light theme only.
+ */
+fun Modifier.glassSurface(
+    cornerRadius: Dp,
+    light: Boolean,
+    fillTop: Color,
+    fillBottom: Color,
+    borderColor: Color,
+): Modifier = drawBehind {
+    val corner = CornerRadius(cornerRadius.toPx(), cornerRadius.toPx())
+    drawRoundRect(
+        brush = Brush.linearGradient(listOf(fillTop, fillBottom)),
+        size = size,
+        cornerRadius = corner,
+    )
+    // 135° reflection — the surface is "lit" from the upper-left
+    drawRoundRect(
+        brush = Brush.linearGradient(
+            listOf(Color.White.copy(alpha = if (light) 0.30f else 0.09f), Color.Transparent),
+            start = Offset.Zero,
+            end = Offset(size.width * 0.9f, size.height * 0.75f),
+        ),
+        size = size,
+        cornerRadius = corner,
+    )
+}.border(
+    width = 1.dp,
+    color = borderColor,
+    shape = RoundedCornerShape(cornerRadius),
+)
+
+/** Glass panel card — the base surface of the console UI. */
+@Composable
+fun GlassCard(
+    modifier: Modifier = Modifier,
+    cornerRadius: Dp = 16.dp,
+    contentPadding: Dp = 14.dp,
+    onClick: (() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val colors = LocalInterstellarColors.current
+    val light = 0.2126f * colors.bg.red + 0.7152f * colors.bg.green + 0.0722f * colors.bg.blue > 0.5f
+    Box(
+        modifier = modifier
+            .then(
+                if (light) {
+                    Modifier.shadow(
+                        6.dp,
+                        RoundedCornerShape(cornerRadius),
+                        ambientColor = Color(0x14000000),
+                        spotColor = Color(0x1A000000),
+                    )
+                } else {
+                    Modifier
+                },
+            )
+            .clip(RoundedCornerShape(cornerRadius))
+            .glassSurface(cornerRadius, light, colors.panelTop, colors.panelBottom, colors.border)
+            .then(
+                if (onClick != null) Modifier.pressableClick(onClick) else Modifier,
+            ),
+    ) {
+        Column(
+            modifier = Modifier.padding(contentPadding),
+            content = content,
+        )
+    }
+}
+
+enum class GlassButtonStyle { Primary, Secondary, Danger }
+
+/**
+ * Capsule action button (satelite's pill buttons): accent fill for the
+ * primary action, glass for secondary, fixed orange for stop.
+ */
+@Composable
+fun GlassButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    style: GlassButtonStyle = GlassButtonStyle.Secondary,
+    enabled: Boolean = true,
+    leading: (@Composable () -> Unit)? = null,
+) {
+    val colors = LocalInterstellarColors.current
+    val light = 0.2126f * colors.bg.red + 0.7152f * colors.bg.green + 0.0722f * colors.bg.blue > 0.5f
+    val (bg, fg) = when (style) {
+        GlassButtonStyle.Primary -> colors.primary to colors.onPrimary
+        GlassButtonStyle.Danger -> colors.danger to Color.White
+        GlassButtonStyle.Secondary -> colors.panelTop to colors.text
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+        modifier = modifier
+            .graphicsLayer { alpha = if (enabled) 1f else 0.5f }
+            .then(
+                if (style == GlassButtonStyle.Primary) {
+                    Modifier.shadow(
+                        10.dp,
+                        RoundedCornerShape(50),
+                        ambientColor = colors.primaryGlow,
+                        spotColor = colors.primaryGlow,
+                    )
+                } else {
+                    Modifier
+                },
+            )
+            .clip(RoundedCornerShape(50))
+            .then(
+                if (style == GlassButtonStyle.Secondary) {
+                    Modifier.glassSurface(50.dp, light, colors.panelTop, colors.panelBottom, colors.border)
+                } else {
+                    Modifier.background(bg)
+                },
+            )
+            .defaultMinSize(minWidth = 96.dp, minHeight = 46.dp)
+            .pressableClick { if (enabled) onClick() }
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+    ) {
+        leading?.invoke()
+        if (leading != null) Spacer(Modifier.width(6.dp))
+        Text(
+            text,
+            color = fg,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+        )
+    }
+}
+
+/** RUN / OFF / CONNECTING capsule with a breathing dot, satelite's status pill. */
+@Composable
+fun StatusPill(
+    text: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+    active: Boolean = false,
+) {
+    val colors = LocalInterstellarColors.current
+    val light = 0.2126f * colors.bg.red + 0.7152f * colors.bg.green + 0.0722f * colors.bg.blue > 0.5f
+    val transition = rememberInfiniteTransition(label = "pillBreath")
+    val breath by transition.animateFloat(
+        initialValue = 0.45f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1300, easing = LinearEasing), RepeatMode.Reverse),
+        label = "pillBreathAlpha",
+    )
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .clip(RoundedCornerShape(50))
+            .glassSurface(50.dp, light, colors.panelTop, colors.panelBottom, colors.border)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.size(12.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(12.dp)
+                    .graphicsLayer { alpha = if (active) breath * 0.5f else 0f }
+                    .clip(CircleShape)
+                    .background(color),
+            )
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(color),
+            )
+        }
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text,
+            color = colors.textSecondary,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 1.5.sp,
+        )
+    }
+}
+
+/**
+ * Dual-area live traffic chart (satelite's sparkline): download as a
+ * filled green area, upload as a stroked red line on top.
+ */
+@Composable
+fun TrafficSparkline(
+    history: List<Pair<Long, Long>>,
+    modifier: Modifier = Modifier,
+    downColor: Color,
+    upColor: Color,
+) {
+    androidx.compose.foundation.Canvas(modifier = modifier) {
+        if (history.isEmpty()) return@Canvas
+        val n = history.size
+        val maxV = history.maxOf { maxOf(it.first, it.second) }.toFloat().coerceAtLeast(1f)
+        val stepX = size.width / 59f.coerceAtLeast((n - 1).toFloat()).coerceAtLeast(1f)
+        val w = stepX * (n - 1)
+
+        fun points(select: (Pair<Long, Long>) -> Long): List<Offset> = history.mapIndexed { i, sample ->
+            val v = select(sample).toFloat() / maxV
+            Offset(size.width - w + i * stepX, size.height * (1f - v * 0.92f) - size.height * 0.04f)
+        }
+
+        val down = points { it.first }
+        val up = points { it.second }
+
+        // download: filled area down to the baseline
+        if (down.size >= 2) {
+            val area = Path().apply {
+                moveTo(down.first().x, size.height)
+                down.forEach { lineTo(it.x, it.y) }
+                lineTo(down.last().x, size.height)
+                close()
+            }
+            drawPath(
+                area,
+                brush = Brush.verticalGradient(
+                    listOf(downColor.copy(alpha = 0.40f), downColor.copy(alpha = 0.02f)),
+                ),
+            )
+            drawPath(
+                Path().apply {
+                    moveTo(down.first().x, down.first().y)
+                    down.drop(1).forEach { lineTo(it.x, it.y) }
+                },
+                color = downColor.copy(alpha = 0.95f),
+                style = Stroke(width = 2f),
+            )
+        }
+        // upload: thin line above
+        if (up.size >= 2) {
+            drawPath(
+                Path().apply {
+                    moveTo(up.first().x, up.first().y)
+                    up.drop(1).forEach { lineTo(it.x, it.y) }
+                },
+                color = upColor.copy(alpha = 0.85f),
+                style = Stroke(width = 1.6f),
+            )
+        }
+    }
+}
+
+/**
+ * Classic orbit hero (satelite's `classic` style): concentric rings,
+ * a diamond core and orbiting satellite dots. The whole thing spins
+ * while running; connecting pulses in info blue; stopped stays dim.
+ */
+@Composable
+fun OrbitHero(
+    status: Status,
+    modifier: Modifier = Modifier,
+    heroSize: Dp = 200.dp,
+) {
+    val colors = LocalInterstellarColors.current
+    val strokeColor by animateColorAsState(
+        targetValue = when (status) {
+            Status.Started -> colors.primary
+            Status.Starting -> colors.accent
+            Status.Stopping -> colors.warning
+            Status.Stopped -> colors.textTertiary
+        },
+        animationSpec = tween(360),
+        label = "orbitColor",
+    )
+    val running = status == Status.Started
+    val idle = rememberInfiniteTransition(label = "orbit")
+    val angle by idle.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(11_000, easing = LinearEasing)),
+        label = "orbitAngle",
+    )
+    val pulse by idle.animateFloat(
+        initialValue = 0.6f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Reverse),
+        label = "orbitPulse",
+    )
+    val orbitScale by animateFloatAsState(
+        targetValue = if (status == Status.Starting) pulse else if (running) 1f + (pulse - 1f) * 0.25f else 1f,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = 200f),
+        label = "orbitScale",
+    )
+
+    androidx.compose.foundation.Canvas(modifier = modifier.size(heroSize)) {
+        val c = center
+        val r = size.minDimension / 2f
+        val glowR = r * 0.95f
+        drawCircle(
+            brush = Brush.radialGradient(
+                listOf(strokeColor.copy(alpha = 0.30f), Color.Transparent),
+                center = c,
+                radius = glowR,
+            ),
+            radius = glowR,
+            center = c,
+        )
+        scale(orbitScale, orbitScale, pivot = c) {
+            // rings
+            listOf(0.94f, 0.66f, 0.40f).forEachIndexed { i, f ->
+                drawCircle(
+                    color = strokeColor.copy(alpha = (0.34f - i * 0.09f).coerceAtLeast(0.10f)),
+                    radius = r * f,
+                    center = c,
+                    style = Stroke(width = 1.6f - i * 0.3f),
+                )
+            }
+            // diamond core
+            rotate(if (running) angle * 0.5f else 0f, pivot = c) {
+                val d = r * 0.115f
+                drawPath(
+                    Path().apply {
+                        moveTo(c.x, c.y - d)
+                        lineTo(c.x + d, c.y)
+                        lineTo(c.x, c.y + d)
+                        lineTo(c.x - d, c.y)
+                        close()
+                    },
+                    color = strokeColor,
+                )
+            }
+            // satellites
+            if (running) {
+                rotate(angle, pivot = c) {
+                    drawCircle(color = strokeColor, radius = r * 0.032f, center = Offset(c.x + r * 0.94f, c.y))
+                }
+                rotate(-angle * 0.62f + 140f, pivot = c) {
+                    drawCircle(
+                        color = strokeColor.copy(alpha = 0.75f),
+                        radius = r * 0.024f,
+                        center = Offset(c.x + r * 0.66f, c.y),
+                    )
+                }
+            } else {
+                drawCircle(color = strokeColor, radius = r * 0.032f, center = Offset(c.x + r * 0.94f, c.y))
+            }
+        }
+    }
+}

@@ -18,8 +18,15 @@ object Motion {
     /** Emphasized transitions (sheets, hero). */
     const val DURATION_SLOW = 350
 
+    /** Page-enter reveal (satelite style: 240ms fade + slight slide). */
+    const val DURATION_PAGE = 240
+    const val PAGE_ENTER_SLIDE_DP = 6
+
     /** iOS default ease curve. */
     val Ease = CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f)
+
+    /** Emphasized decelerate — page enters, glass reveals. */
+    val EaseOutQuart = CubicBezierEasing(0.2f, 0.8f, 0.2f, 1f)
 
     /** iOS ease-in-out. */
     val EaseInOut = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)

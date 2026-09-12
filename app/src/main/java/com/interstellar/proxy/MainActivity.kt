@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -68,6 +69,9 @@ import com.interstellar.proxy.ui.pages.ProxiesPage
 import com.interstellar.proxy.ui.pages.SettingsPage
 import com.interstellar.proxy.ui.pages.SettingsSubPage
 import com.interstellar.proxy.ui.pages.setThemeChangedListener
+import com.interstellar.proxy.ui.components.AmbientGlow
+import com.interstellar.proxy.ui.components.glassSurface
+import com.interstellar.proxy.ui.theme.Accents
 import com.interstellar.proxy.ui.theme.LocalInterstellarColors
 import com.interstellar.proxy.ui.theme.Motion
 import com.interstellar.proxy.ui.theme.InterstellarTheme
@@ -95,7 +99,7 @@ class MainActivity : ComponentActivity() {
             // the current tab / sub-page
             var nav by remember { mutableStateOf(NavState()) }
             androidx.compose.runtime.key(themeVersion) {
-                InterstellarTheme(themeMode = Settings.themeMode, accentId = null) {
+                InterstellarTheme(themeMode = Settings.themeMode, accentId = Accents.selectedId) {
                     AppRoot(
                         nav = nav,
                         onNavChange = { nav = it },
@@ -168,6 +172,8 @@ fun AppRoot(
             .fillMaxSize()
             .background(colors.bg),
     ) {
+        // ambient accent wash behind the whole console
+        AmbientGlow()
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -268,10 +274,16 @@ private fun SubPageContainer(
                 },
             ),
     ) {
+        val light = 0.2126f * colors.bg.red + 0.7152f * colors.bg.green + 0.0722f * colors.bg.blue > 0.5f
+        // floating glass capsule header
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 6.dp),
+                .padding(horizontal = 12.dp, vertical = 6.dp)
+                .heightIn(min = 46.dp)
+                .clip(RoundedCornerShape(50))
+                .glassSurface(50.dp, light, colors.panelTop, colors.panelBottom, colors.border)
+                .padding(horizontal = 6.dp, vertical = 4.dp),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
@@ -280,16 +292,15 @@ private fun SubPageContainer(
                 tint = colors.accent,
                 modifier = Modifier
                     .align(Alignment.CenterStart)
-                    .padding(start = 8.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(RoundedCornerShape(50))
                     .clickable { onBack() }
-                    .padding(8.dp)
-                    .size(22.dp),
+                    .padding(10.dp)
+                    .size(20.dp),
             )
             Text(
                 title,
                 color = colors.text,
-                fontSize = 17.sp,
+                fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
             )
         }

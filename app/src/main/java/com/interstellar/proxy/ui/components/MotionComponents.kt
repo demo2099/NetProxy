@@ -9,6 +9,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -71,8 +72,8 @@ fun Modifier.pressableClick(onClick: () -> Unit): Modifier = composed {
 }
 
 /**
- * iOS-style segmented control: a single thumb that SLIDES between
- * segments on a gray track.
+ * Glass segmented control (satelite's GlassSeg): a frosted thumb that
+ * slides between segments on a deep track, pill geometry.
  */
 @Composable
 fun SegmentedControl(
@@ -82,13 +83,11 @@ fun SegmentedControl(
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalInterstellarColors.current
-    val light = colors.bg.luminance() > 0.5f
-    val thumbColor = if (light) Color.White else Color(0xFF636366)
 
     androidx.compose.foundation.layout.BoxWithConstraints(
         modifier = modifier
-            .height(38.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .height(36.dp)
+            .clip(RoundedCornerShape(50))
             .background(colors.bgDeep)
             .padding(3.dp),
     ) {
@@ -102,15 +101,16 @@ fun SegmentedControl(
             label = "segThumb",
         )
 
-        // sliding thumb under the labels
+        // frosted sliding thumb under the labels
         Box(
             modifier = Modifier
                 .offset(x = thumbX)
                 .width(segWidth)
                 .fillMaxHeight()
                 .padding(2.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(thumbColor),
+                .clip(RoundedCornerShape(50))
+                .background(colors.surfaceHigh)
+                .border(1.dp, colors.border, RoundedCornerShape(50)),
         )
 
         // labels

@@ -26,7 +26,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import com.interstellar.proxy.constant.Status
-import com.interstellar.proxy.ui.theme.GlowPalette
 import com.interstellar.proxy.ui.theme.LocalInterstellarColors
 
 /**
@@ -54,8 +53,8 @@ fun FaceMark(
         animationSpec = spring(dampingRatio = 0.84f, stiffness = 170f),
         label = "faceMood",
     )
-    // macaron glow palette: drives the halo and the connected-state stroke
-    val glowBase = GlowPalette.current(colors.bg, colors.primary)
+    // accent-driven halo: the macaron preset re-skins the whole UI including this glow
+    val glowBase = colors.primary
     val strokeColor by animateColorAsState(
         targetValue = when (status) {
             Status.Started -> glowBase

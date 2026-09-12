@@ -54,6 +54,14 @@ data class SplitRuleStatus(
     val active: Boolean = false,
 )
 
+/** Exit-IP probe lifecycle for the dashboard 网络探测 card. */
+sealed interface ProbeState {
+    data object Idle : ProbeState
+    data object Running : ProbeState
+    data class Done(val result: com.interstellar.proxy.data.net.NetProbe.Result) : ProbeState
+    data class Failed(val message: String) : ProbeState
+}
+
 /**
  * App-wide state holder: box status via the local command socket,
  * subscriptions, and start/stop orchestration.
@@ -123,6 +131,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message
+
+    private val _probe = MutableStateFlow<ProbeState>(ProbeState.Idle)
+    val probe: StateFlow<ProbeState> = _probe
 
     private val _customRules = MutableStateFlow(CustomRulesStore.rules.toList())
     val customRules: StateFlow<List<CustomRouteRule>> = _customRules
@@ -292,11 +303,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (_status.value == Status.Started) return
         _status.value = Status.Started
         _connectedAt.value = System.currentTimeMillis()
+        _probe.value = ProbeState.Idle
         Settings.tileActive = true
         if (!autoTested) {
             autoTested = true
             viewModelScope.launch(Dispatchers.IO) {
                 runCatching { CommandTarget.standaloneClient().urlTest(ConfigBuilder.AUTO_TAG) }
+            }
+            // once the url-test settles, refresh the exit-IP card
+            viewModelScope.launch {
+                delay(6_000)
+                if (_status.value == Status.Started && _probe.value == ProbeState.Idle) {
+                    probeNetwork()
+                }
             }
         }
     }
@@ -753,6 +772,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearMessage() {
         _message.value = null
+    }
+
+    /** One-tap exit-IP probe; races public IP APIs through the running node. */
+    fun probeNetwork() {
+        if (_probe.value == ProbeState.Running) return
+        _probe.value = ProbeState.Running
+        viewModelScope.launch(Dispatchers.IO) {
+            _probe.value = try {
+                ProbeState.Done(com.interstellar.proxy.data.net.NetProbe.probe())
+            } catch (e: Exception) {
+                ProbeState.Failed(e.message ?: "探测失败")
+            }
+        }
     }
 
     private fun urlHost(url: String): String = runCatching {
