@@ -13,6 +13,16 @@ import java.io.File
  * Native side is registered against THIS class (see PKGNAME in the build).
  */
 object TProxyService {
+    /**
+     * hev's JNI_OnLoad does FindClass/RegisterNatives with the CALLING
+     * thread's classloader — coroutine IO threads have none, which aborts
+     * the whole VM. Must touch this object from the main thread first.
+     */
+    @Synchronized
+    fun preload() {
+        running // forces object init (System.loadLibrary) on the caller thread
+    }
+
     val running: Boolean
         get() = runCatching { TProxyIsRunning() }.getOrDefault(false)
 

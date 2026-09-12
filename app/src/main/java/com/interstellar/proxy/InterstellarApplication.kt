@@ -26,6 +26,10 @@ class InterstellarApplication : Application() {
     override fun onCreate() {
         super.onCreate()
 
+        // hev JNI bridge must register on a thread WITH a classloader (main);
+        // a first touch from a coroutine IO thread aborts the whole VM
+        runCatching { com.interstellar.proxy.core.TProxyService.preload() }
+
         runCatching {
             Libbox.setLocale(Locale.getDefault().toLanguageTag())
         }
