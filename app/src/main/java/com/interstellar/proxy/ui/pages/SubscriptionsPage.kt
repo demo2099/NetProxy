@@ -231,15 +231,23 @@ fun SubscriptionsPage(viewModel: AppViewModel) {
     }
 
     if (showAdd) {
+        val adding by viewModel.addingSub.collectAsState()
+        // close the dialog when the import lands; keep it open on failure so
+        // the typed URL survives for a retry
+        val countAtOpen = remember { viewModel.subscriptions.value.size }
+        androidx.compose.runtime.LaunchedEffect(adding) {
+            if (!adding && viewModel.subscriptions.value.size > countAtOpen) {
+                showAdd = false
+            }
+        }
         AddSubscriptionDialog(
+            loading = adding,
             onDismiss = { showAdd = false },
             onAddUrl = { name, url ->
                 viewModel.addSubscriptionFromUrl(name, url)
-                showAdd = false
             },
             onAddText = { name, text ->
                 viewModel.addSubscriptionFromText(name, text)
-                showAdd = false
             },
         )
     }

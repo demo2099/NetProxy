@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.OutlinedTextField
@@ -32,6 +33,7 @@ fun AddSubscriptionDialog(
     onDismiss: () -> Unit,
     onAddUrl: (name: String, url: String) -> Unit,
     onAddText: (name: String, text: String) -> Unit,
+    loading: Boolean = false,
 ) {
     val colors = LocalInterstellarColors.current
     var name by remember { mutableStateOf("") }
@@ -39,7 +41,7 @@ fun AddSubscriptionDialog(
     var text by remember { mutableStateOf("") }
     var mode by remember { mutableStateOf("url") } // url | text
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(onDismissRequest = { if (!loading) onDismiss() }) {
         Column(
             modifier = Modifier
                 .clip(RoundedCornerShape(16.dp))
@@ -127,11 +129,25 @@ fun AddSubscriptionDialog(
                 horizontalArrangement = androidx.compose.foundation.layout.Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ActionChip(text = "取消") { onDismiss() }
-                Spacer(Modifier.width(10.dp))
-                ActionChip(text = "导入", primary = true) {
-                    if (enabled) {
-                        if (mode == "url") onAddUrl(name, url) else onAddText(name, text)
+                if (loading) {
+                    Text(
+                        "正在导入…",
+                        color = colors.textTertiary,
+                        fontSize = 13.sp,
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    androidx.compose.material3.CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = colors.primary,
+                    )
+                } else {
+                    ActionChip(text = "取消") { onDismiss() }
+                    Spacer(Modifier.width(10.dp))
+                    ActionChip(text = "导入", primary = true) {
+                        if (enabled) {
+                            if (mode == "url") onAddUrl(name, url) else onAddText(name, text)
+                        }
                     }
                 }
             }

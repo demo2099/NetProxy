@@ -235,6 +235,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _busy = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = _busy
 
+    /** True while a subscription URL/text import is in flight (dialog spinner). */
+    private val _addingSub = MutableStateFlow(false)
+    val addingSub: StateFlow<Boolean> = _addingSub
+
     /** True while any subscription refresh triggered by pull-to-refresh runs. */
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing
@@ -1053,6 +1057,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun addSubscriptionFromUrl(name: String, url: String) {
         viewModelScope.launch(Dispatchers.IO) {
             _busy.value = true
+            _addingSub.value = true
             try {
                 val result = SubscriptionFetcher.fetch(url)
                 importContent(
@@ -1065,13 +1070,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 _message.value = "下载失败: ${e.message}"
             } finally {
                 _busy.value = false
+                _addingSub.value = false
             }
         }
     }
 
     fun addSubscriptionFromText(name: String, text: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            importContent(name.ifBlank { "本地订阅" }, null, text, null)
+            _addingSub.value = true
+            try {
+                importContent(name.ifBlank { "本地订阅" }, null, text, null)
+            } finally {
+                _addingSub.value = false
+            }
         }
     }
 
