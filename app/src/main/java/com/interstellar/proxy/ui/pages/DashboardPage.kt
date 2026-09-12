@@ -89,6 +89,7 @@ fun DashboardPage(
     connectionsViewModel: ConnectionsViewModel,
     onStart: () -> Unit = { viewModel.startProxy() },
     onOpenSubPage: (SettingsSubPage) -> Unit = {},
+    onOpenTab: (MainTab) -> Unit = {},
 ) {
     val colors = LocalInterstellarColors.current
     val haptics = LocalHapticFeedback.current
@@ -131,8 +132,8 @@ fun DashboardPage(
             .associate { (tag, node) -> tag to node.type.wire.uppercase() }
     }
 
-    // 左滑直接进设置页（设置页右滑返回主页，见 SubPageContainer）
-    val openSubPage by rememberUpdatedState(onOpenSubPage)
+    // 左滑直接切到设置 tab（底部 dock 导航）
+    val openTab by rememberUpdatedState(onOpenTab)
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
@@ -141,7 +142,7 @@ fun DashboardPage(
                 detectHorizontalDragGestures(
                     onDragStart = { accum = 0f },
                     onDragEnd = {
-                        if (accum < -70.dp.toPx()) openSubPage(SettingsSubPage.Settings)
+                        if (accum < -70.dp.toPx()) openTab(MainTab.Settings)
                     },
                 ) { _, dragAmount -> accum += dragAmount }
             },
@@ -186,7 +187,7 @@ fun DashboardPage(
                 GlassIconButton(
                     icon = Icons.Outlined.Settings,
                     contentDescription = "设置",
-                ) { onOpenSubPage(SettingsSubPage.Settings) }
+                ) { onOpenTab(MainTab.Settings) }
             }
 
             Spacer(Modifier.height(8.dp))
@@ -273,7 +274,7 @@ fun DashboardPage(
                 modifier = Modifier
                     .then(if (picking) Modifier.graphicsLayer { alpha = pickPulse } else Modifier)
                     .clip(RoundedCornerShape(8.dp))
-                    .pressableClick { onOpenSubPage(SettingsSubPage.Proxies) }
+                    .pressableClick { onOpenTab(MainTab.Nodes) }
                     .padding(horizontal = 12.dp, vertical = 4.dp),
             )
 
@@ -352,7 +353,7 @@ fun DashboardPage(
                                     activeSubscriptionId = activeSubscriptionId,
                                     mixEnabled = mixEnabled,
                                     mixSubscriptionIds = mixSubscriptionIds,
-                                    noCandidates = { onOpenSubPage(SettingsSubPage.Proxies) },
+                                    noCandidates = { onOpenTab(MainTab.Nodes) },
                                 )
                             }
                         },
@@ -385,7 +386,7 @@ fun DashboardPage(
                 GlassButton(
                     text = "切换节点",
                     style = GlassButtonStyle.Secondary,
-                    onClick = { onOpenSubPage(SettingsSubPage.Proxies) },
+                    onClick = { onOpenTab(MainTab.Nodes) },
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -514,7 +515,7 @@ fun DashboardPage(
                 }
                 InstrumentCard(
                     caption = "订阅",
-                    onClick = { onOpenSubPage(SettingsSubPage.Proxies) },
+                    onClick = { onOpenTab(MainTab.Subscriptions) },
                     modifier = Modifier.weight(1f),
                 ) {
                     val activeSub = subscriptions.find { it.id == activeSubscriptionId }

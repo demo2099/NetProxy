@@ -61,7 +61,17 @@ fun setThemeChangedListener(listener: () -> Unit) {
     onThemeChanged = listener
 }
 
-enum class SettingsSubPage { Settings, PerApp, Connections, Logs, Proxies, Rules, Dns }
+enum class SettingsSubPage { Settings, PerApp, Connections, Logs, Rules, Dns }
+
+/** Bottom-dock root tabs (satelite's navbar, phone layout). */
+enum class MainTab { Home, Nodes, Subscriptions, Settings }
+
+fun mainTabTitle(tab: MainTab): String = when (tab) {
+    MainTab.Home -> "首页"
+    MainTab.Nodes -> "节点"
+    MainTab.Subscriptions -> "订阅"
+    MainTab.Settings -> "设置"
+}
 
 /** hiddify-style: phone uses 2 tabs (Home/Settings); these pages push in. */
 fun settingsSubPageTitle(page: SettingsSubPage): String = when (page) {
@@ -69,7 +79,6 @@ fun settingsSubPageTitle(page: SettingsSubPage): String = when (page) {
     SettingsSubPage.PerApp -> "分应用代理"
     SettingsSubPage.Connections -> "监控"
     SettingsSubPage.Logs -> "系统日志"
-    SettingsSubPage.Proxies -> "节点"
     SettingsSubPage.Rules -> "分流规则"
     SettingsSubPage.Dns -> "DNS 解析"
 }

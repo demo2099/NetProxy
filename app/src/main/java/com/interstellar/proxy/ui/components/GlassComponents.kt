@@ -11,21 +11,29 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -295,6 +303,91 @@ fun TrafficSparkline(
                 color = upColor.copy(alpha = 0.85f),
                 style = Stroke(width = 1.6f),
             )
+        }
+    }
+}
+
+/**
+ * Floating glass dock (satelite's capsule navbar, bottom-docked for phones):
+ * frosted sliding thumb under icon+label items, pill geometry.
+ */
+data class DockItem(
+    val label: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val iconSelected: androidx.compose.ui.graphics.vector.ImageVector,
+)
+
+@Composable
+fun GlassDock(
+    items: List<DockItem>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = LocalInterstellarColors.current
+    val light = 0.2126f * colors.bg.red + 0.7152f * colors.bg.green + 0.0722f * colors.bg.blue > 0.5f
+    androidx.compose.foundation.layout.BoxWithConstraints(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .height(64.dp)
+            .clip(RoundedCornerShape(50))
+            .glassSurface(50.dp, light, colors.panelTop, colors.panelBottom, colors.border),
+    ) {
+        val itemWidth = maxWidth / items.size
+        val thumbX by androidx.compose.animation.core.animateDpAsState(
+            targetValue = itemWidth * selected.coerceIn(0, items.size - 1),
+            animationSpec = spring(dampingRatio = 0.85f, stiffness = 420f),
+            label = "dockThumb",
+        )
+
+        // frosted sliding thumb
+        Box(
+            modifier = Modifier
+                .offset(x = thumbX)
+                .width(itemWidth)
+                .fillMaxHeight()
+                .padding(5.dp)
+                .clip(RoundedCornerShape(50))
+                .background(colors.surfaceHigh)
+                .border(1.dp, colors.border, RoundedCornerShape(50)),
+        )
+
+        Row(modifier = Modifier.fillMaxSize()) {
+            items.forEachIndexed { index, item ->
+                val isSelected = index == selected
+                val fg by animateColorAsState(
+                    targetValue = if (isSelected) colors.primary else colors.textTertiary,
+                    animationSpec = tween(Motion.DURATION_MEDIUM, easing = Motion.Ease),
+                    label = "dockFg",
+                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onSelect(index) },
+                ) {
+                    Icon(
+                        imageVector = if (isSelected) item.iconSelected else item.icon,
+                        contentDescription = item.label,
+                        tint = fg,
+                        modifier = Modifier.size(21.dp),
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        item.label,
+                        color = fg,
+                        fontSize = 10.sp,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                        maxLines = 1,
+                    )
+                }
+            }
         }
     }
 }

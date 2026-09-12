@@ -37,6 +37,14 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Hub
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Subscriptions
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Hub
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Subscriptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -65,11 +73,12 @@ import com.interstellar.proxy.ui.pages.ConnectionsPage
 import com.interstellar.proxy.ui.pages.DashboardPage
 import com.interstellar.proxy.ui.pages.LogsPage
 import com.interstellar.proxy.ui.pages.PerAppProxyPage
-import com.interstellar.proxy.ui.pages.ProxiesPage
 import com.interstellar.proxy.ui.pages.SettingsPage
 import com.interstellar.proxy.ui.pages.SettingsSubPage
 import com.interstellar.proxy.ui.pages.setThemeChangedListener
 import com.interstellar.proxy.ui.components.AmbientGlow
+import com.interstellar.proxy.ui.components.DockItem
+import com.interstellar.proxy.ui.components.GlassDock
 import com.interstellar.proxy.ui.components.glassSurface
 import com.interstellar.proxy.ui.theme.Accents
 import com.interstellar.proxy.ui.theme.LocalInterstellarColors
@@ -137,8 +146,9 @@ private fun clipFingerprint(text: String): String =
         .joinToString("") { "%02x".format(it) }
         .take(16)
 
-/** navigation state: tab index + optional pushed sub-page. */
+/** navigation state: bottom-dock tab + optional pushed sub-page stack. */
 data class NavState(
+    val tab: com.interstellar.proxy.ui.pages.MainTab = com.interstellar.proxy.ui.pages.MainTab.Home,
     val pages: List<SettingsSubPage> = emptyList(),
 )
 
@@ -166,6 +176,8 @@ fun AppRoot(
 
     fun push(page: SettingsSubPage) = onNavChange(nav.copy(pages = nav.pages + page))
     fun pop() = onNavChange(nav.copy(pages = nav.pages.dropLast(1)))
+    fun switchTab(tab: com.interstellar.proxy.ui.pages.MainTab) =
+        onNavChange(nav.copy(tab = tab, pages = emptyList()))
 
     Box(
         modifier = Modifier
@@ -211,7 +223,6 @@ fun AppRoot(
                         SubPageContainer(
                             title = com.interstellar.proxy.ui.pages.settingsSubPageTitle(current),
                             onBack = { pop() },
-                            swipeBack = current == SettingsSubPage.Settings,
                         ) {
                             when (current) {
                                 SettingsSubPage.Settings -> SettingsPage(
@@ -221,18 +232,69 @@ fun AppRoot(
                                 SettingsSubPage.PerApp -> PerAppProxyPage(onBack = { pop() })
                                 SettingsSubPage.Connections -> ConnectionsPage(connectionsViewModel, appViewModel)
                                 SettingsSubPage.Logs -> LogsPage(logsViewModel)
-                                SettingsSubPage.Proxies -> ProxiesPage(appViewModel)
                                 SettingsSubPage.Rules -> com.interstellar.proxy.ui.pages.CustomRulesPage(appViewModel)
                                 SettingsSubPage.Dns -> com.interstellar.proxy.ui.pages.DnsOverridesPage(appViewModel)
                             }
                         }
                     } else {
-                        DashboardPage(
-                            viewModel = appViewModel,
-                            connectionsViewModel = connectionsViewModel,
-                            onStart = { requestVpnThenStart { appViewModel.startProxy() } },
-                            onOpenSubPage = { sub -> push(sub) },
-                        )
+                        // system back on a non-home tab returns Home first
+                        androidx.activity.compose.BackHandler(
+                            enabled = nav.tab != com.interstellar.proxy.ui.pages.MainTab.Home,
+                        ) {
+                            switchTab(com.interstellar.proxy.ui.pages.MainTab.Home)
+                        }
+                        // tab root + floating glass dock (satelite's capsule navbar)
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                AnimatedContent(
+                                    targetState = nav.tab,
+                                    transitionSpec = {
+                                        val dir = targetState.ordinal
+                                            .compareTo(initialState.ordinal)
+                                            .coerceIn(-1, 1)
+                                        val enter = slideInHorizontally(
+                                            tween(Motion.DURATION_PAGE, easing = Motion.EaseOutQuart),
+                                        ) { dir * 46 } + fadeIn(tween(Motion.DURATION_PAGE))
+                                        val exit = slideOutHorizontally(
+                                            tween(Motion.DURATION_PAGE, easing = Motion.EaseOutQuart),
+                                        ) { -dir * 46 } + fadeOut(tween(180))
+                                        enter togetherWith exit
+                                    },
+                                    label = "tab",
+                                ) { tab ->
+                                    when (tab) {
+                                        com.interstellar.proxy.ui.pages.MainTab.Home -> DashboardPage(
+                                            viewModel = appViewModel,
+                                            connectionsViewModel = connectionsViewModel,
+                                            onStart = { requestVpnThenStart { appViewModel.startProxy() } },
+                                            onOpenSubPage = { sub -> push(sub) },
+                                            onOpenTab = { t -> switchTab(t) },
+                                        )
+
+                                        com.interstellar.proxy.ui.pages.MainTab.Nodes ->
+                                            com.interstellar.proxy.ui.pages.NodesPage(appViewModel)
+
+                                        com.interstellar.proxy.ui.pages.MainTab.Subscriptions ->
+                                            com.interstellar.proxy.ui.pages.SubscriptionsPage(appViewModel)
+
+                                        com.interstellar.proxy.ui.pages.MainTab.Settings -> SettingsPage(
+                                            onOpen = { sub -> push(sub) },
+                                            onProxyChanged = { appViewModel.refreshProxyConfig() },
+                                        )
+                                    }
+                                }
+                            }
+                            GlassDock(
+                                items = listOf(
+                                    DockItem("首页", Icons.Outlined.Home, Icons.Filled.Home),
+                                    DockItem("节点", Icons.Outlined.Hub, Icons.Filled.Hub),
+                                    DockItem("订阅", Icons.Outlined.Subscriptions, Icons.Filled.Subscriptions),
+                                    DockItem("设置", Icons.Outlined.Settings, Icons.Filled.Settings),
+                                ),
+                                selected = nav.tab.ordinal,
+                                onSelect = { switchTab(com.interstellar.proxy.ui.pages.MainTab.entries[it]) },
+                            )
+                        }
                     }
                 }
             }
