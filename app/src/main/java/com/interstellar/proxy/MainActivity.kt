@@ -19,6 +19,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -245,7 +246,29 @@ fun AppRoot(
                         }
                         // tab root + floating glass dock (satelite's capsule navbar)
                         Column(modifier = Modifier.fillMaxSize()) {
-                            Box(modifier = Modifier.weight(1f)) {
+                            // 左右滑动在 dock 四个 tab 间切换
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .pointerInput(Unit) {
+                                        var accum = 0f
+                                        detectHorizontalDragGestures(
+                                            onDragStart = { accum = 0f },
+                                            onDragEnd = {
+                                                val threshold = 70.dp.toPx()
+                                                val idx = nav.tab.ordinal
+                                                val tabs = com.interstellar.proxy.ui.pages.MainTab.entries
+                                                when {
+                                                    accum < -threshold && idx < tabs.lastIndex ->
+                                                        switchTab(tabs[idx + 1])
+
+                                                    accum > threshold && idx > 0 ->
+                                                        switchTab(tabs[idx - 1])
+                                                }
+                                            },
+                                        ) { _, dragAmount -> accum += dragAmount }
+                                    },
+                            ) {
                                 AnimatedContent(
                                     targetState = nav.tab,
                                     transitionSpec = {

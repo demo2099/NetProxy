@@ -9,7 +9,6 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -31,7 +30,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.TrendingUp
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,7 +38,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,7 +45,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
@@ -132,21 +128,8 @@ fun DashboardPage(
             .associate { (tag, node) -> tag to node.type.wire.uppercase() }
     }
 
-    // 左滑直接切到设置 tab（底部 dock 导航）
-    val openTab by rememberUpdatedState(onOpenTab)
-    BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxSize()
-            .pointerInput(Unit) {
-                var accum = 0f
-                detectHorizontalDragGestures(
-                    onDragStart = { accum = 0f },
-                    onDragEnd = {
-                        if (accum < -70.dp.toPx()) openTab(MainTab.Settings)
-                    },
-                ) { _, dragAmount -> accum += dragAmount }
-            },
-    ) {
+    // 左右滑动切换 dock tab 的手势由 MainActivity 在 tab 根页统一挂载
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val viewportHeight = maxHeight
         val heroSize = 196.dp.coerceAtMost(maxWidth - 140.dp)
         Column(
@@ -183,11 +166,6 @@ fun DashboardPage(
                     icon = Icons.AutoMirrored.Outlined.TrendingUp,
                     contentDescription = "监控",
                 ) { onOpenSubPage(SettingsSubPage.Connections) }
-                Spacer(Modifier.width(8.dp))
-                GlassIconButton(
-                    icon = Icons.Outlined.Settings,
-                    contentDescription = "设置",
-                ) { onOpenTab(MainTab.Settings) }
             }
 
             Spacer(Modifier.height(8.dp))
