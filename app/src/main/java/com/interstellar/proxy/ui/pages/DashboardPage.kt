@@ -177,33 +177,43 @@ fun DashboardPage(
 
             Spacer(Modifier.height(10.dp))
 
-            // ── Kicker：状态胶囊 + 运行时长
+            // ── Kicker：状态胶囊 + 运行时长（固定槽位，状态文字变化不推挤布局）
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                StatusPill(
-                    text = when (status) {
-                        Status.Started -> "RUN"
-                        Status.Starting -> "CONNECTING"
-                        Status.Stopping -> "STOPPING"
-                        Status.Stopped -> "OFF"
-                    },
-                    color = when (status) {
-                        Status.Started -> colors.primary
-                        Status.Starting, Status.Stopping -> colors.warning
-                        Status.Stopped -> colors.textTertiary
-                    },
-                    active = running || status == Status.Starting,
-                )
-                if (running && connectedAt > 0L) {
-                    TickingElapsed(connectedAt) { elapsed ->
-                        Text(
-                            elapsed,
-                            color = colors.textTertiary,
-                            fontSize = 12.sp,
-                            fontFamily = FontFamily.Monospace,
-                        )
+                Box(
+                    modifier = Modifier.width(124.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    StatusPill(
+                        text = when (status) {
+                            Status.Started -> "RUN"
+                            Status.Starting -> "CONNECTING"
+                            Status.Stopping -> "STOPPING"
+                            Status.Stopped -> "OFF"
+                        },
+                        color = when (status) {
+                            Status.Started -> colors.primary
+                            Status.Starting, Status.Stopping -> colors.warning
+                            Status.Stopped -> colors.textTertiary
+                        },
+                        active = running || status == Status.Starting,
+                    )
+                }
+                Box(
+                    modifier = Modifier.width(64.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (running && connectedAt > 0L) {
+                        TickingElapsed(connectedAt) { elapsed ->
+                            Text(
+                                elapsed,
+                                color = colors.textTertiary,
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace,
+                            )
+                        }
                     }
                 }
             }
@@ -233,17 +243,14 @@ fun DashboardPage(
                 resolvedNode != "未选择" -> resolvedNode
                 else -> "未选择节点"
             }
+            // 固定字号 + 固定行高：节点名长度/状态变化不影响下方布局
             Text(
                 nodeTitle,
                 color = when {
                     picking -> colors.textTertiary
                     else -> colors.text
                 },
-                fontSize = when {
-                    nodeTitle.length > 18 -> 18.sp
-                    nodeTitle.length > 12 -> 21.sp
-                    else -> 25.sp
-                },
+                fontSize = 22.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -268,6 +275,8 @@ fun DashboardPage(
                     listOfNotNull(protocol, delayText).joinToString(" · "),
                     color = colors.textTertiary,
                     fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .clickable { viewModel.urlTest(ConfigBuilder.GROUP_TAG) }
