@@ -176,8 +176,6 @@ fun AppRoot(
 
     fun push(page: SettingsSubPage) = onNavChange(nav.copy(pages = nav.pages + page))
     fun pop() = onNavChange(nav.copy(pages = nav.pages.dropLast(1)))
-    fun switchTab(tab: com.interstellar.proxy.ui.pages.MainTab) =
-        onNavChange(nav.copy(tab = tab, pages = emptyList()))
 
     Box(
         modifier = Modifier
@@ -237,34 +235,25 @@ fun AppRoot(
                             }
                         }
                     } else {
-                        // system back on a non-home tab returns Home first
-                        androidx.activity.compose.BackHandler(
-                            enabled = nav.tab != com.interstellar.proxy.ui.pages.MainTab.Home,
-                        ) {
-                            switchTab(com.interstellar.proxy.ui.pages.MainTab.Home)
-                        }
                         // tab roots live in a HorizontalPager: finger-following drag,
-                        // snap settle (iOS-style), gestures owned by the pager itself
+                        // snap settle (iOS-style), gestures owned by the pager itself.
+                        // A user swipe writes NO state at all (zero recomposition at
+                        // settle); only programmatic jumps go through jumpTo.
                         val tabs = com.interstellar.proxy.ui.pages.MainTab.entries
                         val pagerState = androidx.compose.foundation.pager.rememberPagerState(
                             initialPage = nav.tab.ordinal,
                         ) { tabs.size }
                         val scope = androidx.compose.runtime.rememberCoroutineScope()
-                        // user swiped the pager → sync nav.tab (dock highlight, back key)
-                        androidx.compose.runtime.LaunchedEffect(pagerState) {
-                            androidx.compose.runtime.snapshotFlow { pagerState.settledPage }
-                                .collect { page ->
-                                    val target = tabs[page]
-                                    if (nav.tab != target) switchTab(target)
-                                }
+                        fun jumpTo(tab: com.interstellar.proxy.ui.pages.MainTab) {
+                            if (nav.tab != tab) onNavChange(nav.copy(tab = tab, pages = emptyList()))
+                            // direct switch, iOS TabBar style — no carousel ride
+                            scope.launch { pagerState.scrollToPage(tab.ordinal) }
                         }
-                        // nav.tab changed externally (back key / dashboard shortcuts) → pager follows
-                        androidx.compose.runtime.LaunchedEffect(nav.tab) {
-                            val target = nav.tab.ordinal
-                            if (!pagerState.isScrollInProgress && pagerState.settledPage != target) {
-                                // tab-like direct switch, no carousel ride through neighbors
-                                pagerState.scrollToPage(target)
-                            }
+                        // system back on a non-home tab returns Home first (derived from the pager)
+                        androidx.activity.compose.BackHandler(
+                            enabled = pagerState.currentPage != 0,
+                        ) {
+                            jumpTo(com.interstellar.proxy.ui.pages.MainTab.Home)
                         }
                         Column(modifier = Modifier.fillMaxSize()) {
                             androidx.compose.foundation.pager.HorizontalPager(
@@ -277,7 +266,7 @@ fun AppRoot(
                                         connectionsViewModel = connectionsViewModel,
                                         onStart = { requestVpnThenStart { appViewModel.startProxy() } },
                                         onOpenSubPage = { sub -> push(sub) },
-                                        onOpenTab = { t -> switchTab(t) },
+                                        onOpenTab = { t -> jumpTo(t) },
                                     )
 
                                     com.interstellar.proxy.ui.pages.MainTab.Nodes ->
@@ -300,10 +289,7 @@ fun AppRoot(
                                     DockItem("设置", Icons.Outlined.Settings, Icons.Filled.Settings),
                                 ),
                                 selected = pagerState.currentPage,
-                                onSelect = { i ->
-                                    // direct switch, iOS TabBar style — only swipes animate
-                                    scope.launch { pagerState.scrollToPage(i) }
-                                },
+                                onSelect = { i -> jumpTo(tabs[i]) },
                             )
                         }
                     }
