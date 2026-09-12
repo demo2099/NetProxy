@@ -295,7 +295,7 @@ fun DashboardPage(
                 }
                 Spacer(Modifier.width(10.dp))
                 StatusChip(label = "应用分流", value = if (scopeOn) "开" else "关") {
-                    onOpenSubPage(SettingsSubPage.Proxy)
+                    onOpenSubPage(SettingsSubPage.PerApp)
                 }
             }
 

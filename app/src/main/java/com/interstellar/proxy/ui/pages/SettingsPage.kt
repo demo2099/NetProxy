@@ -67,7 +67,7 @@ fun settingsSubPageTitle(page: SettingsSubPage): String = when (page) {
     SettingsSubPage.Logs -> "系统日志"
     SettingsSubPage.Rules -> "分流规则"
     SettingsSubPage.Dns -> "DNS 解析"
-    SettingsSubPage.Proxy -> "分流"
+    SettingsSubPage.Proxy -> "路由设置"
 }
 
 private fun isIgnoringBatteryOptimizations(context: android.content.Context): Boolean =
@@ -138,26 +138,25 @@ fun SettingsPage(onOpen: (SettingsSubPage) -> Unit, onProxyChanged: () -> Unit =
         // ---- 分流 ----
         PrefSectionLabel("分流")
         GlassCard(modifier = Modifier.fillMaxWidth(), contentPadding = 6.dp) {
-            val ruleTotal = CustomRulesStore.rules.size + com.interstellar.proxy.data.SimpleRulesStore.rules.size
-            val ruleOn = com.interstellar.proxy.data.SimpleRulesStore.rules.count { it.enabled }
             PrefNavRow(
-                title = "分流设置",
-                desc = "路由模式 / 应用分流(白名单·黑名单) / 分流细则",
+                title = "应用分流",
+                desc = "白名单 / 黑名单控制哪些应用走代理",
+                value = when {
+                    !Settings.perAppProxyEnabled -> "关闭"
+                    Settings.perAppProxyMode == Settings.PER_APP_PROXY_INCLUDE -> "白名单 · ${Settings.perAppProxyList.size}"
+                    else -> "黑名单 · ${Settings.perAppProxyList.size}"
+                },
+                onClick = { onOpen(SettingsSubPage.PerApp) },
+            )
+            PrefNavRow(
+                title = "路由设置",
+                desc = "路由模式 / 规则细则 / 路由规则",
                 value = when (Settings.outboundMode) {
                     com.interstellar.proxy.data.config.ConfigBuilder.OutboundMode.GLOBAL -> "代理"
                     com.interstellar.proxy.data.config.ConfigBuilder.OutboundMode.DIRECT -> "直连"
                     else -> "规则"
                 },
                 onClick = { onOpen(SettingsSubPage.Proxy) },
-            )
-            PrefNavRow(
-                title = "分流规则",
-                desc = "域名 → 直连 / 代理 / 指定节点",
-                value = when {
-                    ruleTotal == 0 -> "未设置"
-                    else -> "$ruleOn 条启用"
-                },
-                onClick = { onOpen(SettingsSubPage.Rules) },
             )
             val dnsTotal = DnsOverridesStore.entries.size
             val dnsOn = DnsOverridesStore.entries.count { it.enabled }
@@ -490,34 +489,6 @@ fun ProxySettingsPage(viewModel: com.interstellar.proxy.ui.AppViewModel, onOpen:
 
         Spacer(Modifier.height(22.dp))
 
-        // ---- 应用分流 ----
-        PrefSectionLabel("应用分流")
-        GlassCard(modifier = Modifier.fillMaxWidth(), contentPadding = 6.dp) {
-            val scopes = listOf("all", "whitelist", "blacklist")
-            val scopeIndex = when {
-                !Settings.perAppProxyEnabled -> 0
-                Settings.perAppProxyMode == Settings.PER_APP_PROXY_INCLUDE -> 1
-                else -> 2
-            }
-            PrefSegRow(
-                title = "范围",
-                desc = "哪些应用的流量进入代理",
-                items = listOf("全部应用", "白名单", "黑名单"),
-                selected = scopeIndex,
-                layout = SegLayout.Below,
-                onSelect = { i -> viewModel.setProxyScope(scopes[i]) },
-            )
-            PrefNavRow(
-                title = "选择应用",
-                desc = if (scopeIndex == 1) "白名单内的应用走代理" else if (scopeIndex == 2) "黑名单内的应用不走代理" else "启用白/黑名单后选择应用",
-                value = if (scopeIndex == 0) null else "已选 ${Settings.perAppProxyList.size} 个",
-                onClick = { onOpen(SettingsSubPage.PerApp) },
-            )
-        }
-        IosSectionFooter("应用分流在 VPN 层生效:更换范围后重连一次即完全应用到 mihomo。")
-
-        Spacer(Modifier.height(22.dp))
-
         // ---- 规则细则 ----
         PrefSectionLabel("规则细则")
         GlassCard(modifier = Modifier.fillMaxWidth(), contentPadding = 6.dp) {
@@ -571,11 +542,11 @@ fun ProxySettingsPage(viewModel: com.interstellar.proxy.ui.AppViewModel, onOpen:
         Spacer(Modifier.height(22.dp))
 
         // ---- 规则入口 ----
-        PrefSectionLabel("手动规则")
+        PrefSectionLabel("路由规则")
         GlassCard(modifier = Modifier.fillMaxWidth(), contentPadding = 6.dp) {
             val ruleOn = com.interstellar.proxy.data.SimpleRulesStore.rules.count { it.enabled }
             PrefNavRow(
-                title = "分流规则",
+                title = "路由规则",
                 desc = "域名 → 直连 / 代理 / 指定节点",
                 value = if (ruleOn == 0) "未设置" else "$ruleOn 条启用",
                 onClick = { onOpen(SettingsSubPage.Rules) },
