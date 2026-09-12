@@ -2,6 +2,7 @@ package com.interstellar.proxy.core
 
 import android.content.Context
 import android.util.Log
+import com.interstellar.proxy.core.AppLog
 import com.interstellar.proxy.data.SubscriptionRepository
 import com.interstellar.proxy.data.Settings
 import com.interstellar.proxy.data.config.ConfigBuilder
@@ -35,7 +36,27 @@ class MihomoCore(
     private var activeTunFd: Int? = null
 
     override suspend fun startup() {
-        // nothing to pre-create beyond the work dir; process spawns on first applyConfig
+        ensureGeodata()
+    }
+
+    /**
+     * mihomo fatals when GEOSITE/GEOIP rules can't resolve their databases,
+     * and its built-in download needs a working network (chicken-and-egg on
+     * a fresh start) — ship the databases in assets and extract once.
+     */
+    private fun ensureGeodata() {
+        val marker = File(workDir, "geodata.extracted")
+        val geosite = File(workDir, "geosite.dat")
+        val geoip = File(workDir, "geoip.metadb")
+        if (marker.isFile && geosite.isFile && geoip.isFile) return
+        context.assets.open("geodata/geosite.dat").use { input ->
+            geosite.outputStream().use { input.copyTo(it) }
+        }
+        context.assets.open("geodata/geoip.metadb").use { input ->
+            geoip.outputStream().use { input.copyTo(it) }
+        }
+        marker.writeText("1")
+        Log.i(TAG, "geodata extracted to $workDir")
     }
 
     override suspend fun applyConfig(config: String, overrides: CoreOverrides) {
@@ -43,13 +64,13 @@ class MihomoCore(
         if (sidecar?.running == true) {
             // hot reload: rewrite the file, then ask mihomo to re-read it
             configFile.writeText(materialize(config))
-            if (!api.reload(configFile.absolutePath)) {
-                // API unreachable → process died between checks; fall through to respawn
-                sidecar?.destroy()
-            } else {
+            if (api.reload(configFile.absolutePath)) {
+                AppLog.log("mihomo", "配置已热重载")
                 applySelection(overrides)
                 return
             }
+            // API unreachable → process died between checks; fall through to respawn
+            sidecar?.destroy()
         }
 
         val tunFd = host.openSidecarTun(
@@ -67,6 +88,7 @@ class MihomoCore(
 
         val process = SidecarProcess(context, "libmihomo.so", listOf("-d", workDir.absolutePath, "-f", configFile.absolutePath), workDir) { code ->
             Log.e(TAG, "mihomo exited unexpectedly: $code")
+            AppLog.log("mihomo", "进程异常退出 code=$code")
             activeTunFd = null
             Holder.instance = null
             host.onCoreRequestStop()
@@ -74,6 +96,7 @@ class MihomoCore(
         process.start()
         sidecar = process
         Holder.instance = this
+        com.interstellar.proxy.core.AppLog.log("mihomo", "进程已启动, 等待 API 就绪…")
 
         // wait for the REST API to come up (config parse + geodata init)
         var ready = false
@@ -86,6 +109,7 @@ class MihomoCore(
         }
         if (!ready) {
             Log.e(TAG, "mihomo API not ready after ${READY_POLLS * READY_INTERVAL_MS}ms")
+            AppLog.log("mihomo", "启动超时, 详见 libmihomo.so.log")
             error("mihomo 启动超时(详见 ${configFile.parentFile}/libmihomo.so.log)")
         }
         applySelection(overrides)

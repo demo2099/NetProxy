@@ -607,6 +607,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     waited += 200
                 }
             }
+            com.interstellar.proxy.core.AppLog.log("core", "切换内核 → ${kind.displayName}")
             Settings.coreKind = kind
             _groups.value = emptyList()
             _delays.value = emptyMap()

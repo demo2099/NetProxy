@@ -56,7 +56,7 @@ fun setThemeChangedListener(listener: () -> Unit) {
 enum class SettingsSubPage { Settings, PerApp, Connections, Logs, Rules, Dns }
 
 /** Bottom-dock root tabs (satelite's navbar, phone layout). */
-enum class MainTab { Home, Nodes, Subscriptions, Settings }
+enum class MainTab { Home, Nodes, Subscriptions, Logs, Settings }
 
 /** hiddify-style: phone uses 2 tabs (Home/Settings); these pages push in. */
 fun settingsSubPageTitle(page: SettingsSubPage): String = when (page) {

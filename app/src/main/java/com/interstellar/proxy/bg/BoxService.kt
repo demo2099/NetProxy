@@ -110,6 +110,7 @@ class BoxService(private val service: Service, private val platformInterface: Pl
         )
 
     private suspend fun startCore() {
+        com.interstellar.proxy.core.AppLog.log("service", "启动内核 ${Settings.coreKind.displayName}")
         core = CoreEngines.create(Settings.coreKind, platformInterface, this).also { it.startup() }
     }
 
@@ -260,6 +261,7 @@ class BoxService(private val service: Service, private val platformInterface: Pl
 
     private suspend fun stopAndAlert(type: Alert, message: String? = null) {
         android.util.Log.e("InterstellarUI", "service stopped: $type msg=$message", Throwable("trace"))
+        com.interstellar.proxy.core.AppLog.log("service", "已停止: $type${message?.let { " · $it" } ?: ""}")
         val pfd = fileDescriptor
         if (pfd != null) {
             pfd.close()

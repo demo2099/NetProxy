@@ -36,10 +36,12 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Subscriptions
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Settings
@@ -275,6 +277,9 @@ fun AppRoot(
                                     com.interstellar.proxy.ui.pages.MainTab.Subscriptions ->
                                         com.interstellar.proxy.ui.pages.SubscriptionsPage(appViewModel)
 
+                                    com.interstellar.proxy.ui.pages.MainTab.Logs ->
+                                        com.interstellar.proxy.ui.pages.LogsPage(logsViewModel)
+
                                     com.interstellar.proxy.ui.pages.MainTab.Settings -> SettingsPage(
                                         onOpen = { sub -> push(sub) },
                                         onProxyChanged = { appViewModel.refreshProxyConfig() },
@@ -286,6 +291,7 @@ fun AppRoot(
                                     DockItem("首页", Icons.Outlined.Home, Icons.Filled.Home),
                                     DockItem("节点", Icons.Outlined.Hub, Icons.Filled.Hub),
                                     DockItem("订阅", Icons.Outlined.Subscriptions, Icons.Filled.Subscriptions),
+                                    DockItem("日志", Icons.Outlined.Description, Icons.Filled.Description),
                                     DockItem("设置", Icons.Outlined.Settings, Icons.Filled.Settings),
                                 ),
                                 selected = pagerState.currentPage,

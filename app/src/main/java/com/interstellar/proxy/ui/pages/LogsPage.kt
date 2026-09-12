@@ -27,7 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.interstellar.proxy.ui.LogsViewModel
 import com.interstellar.proxy.ui.theme.LocalInterstellarColors
-import io.nekohasekai.libbox.LogEntry
+import com.interstellar.proxy.ui.LogLine
 
 @Composable
 fun LogsPage(viewModel: LogsViewModel) {
@@ -111,7 +111,7 @@ fun LogsPage(viewModel: LogsViewModel) {
     }
 }
 
-private fun formatLog(entry: LogEntry): String {
+private fun formatLog(entry: LogLine): String {
     return "[${levelName(entry.level)}] ${entry.message}"
 }
 
