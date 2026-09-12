@@ -111,7 +111,9 @@ jobs:
           fi
 
       - name: Build release APK
-        run: ./gradlew :app:assembleRelease --no-daemon
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease --no-daemon
 
       # interstellar-<abi>-release.apk → interstellar-<abi>-<tag>.apk
       - name: Rename APKs with tag
