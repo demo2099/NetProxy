@@ -12,6 +12,12 @@ Android 7.0+ · v0.3.0 · Kotlin + Jetpack Compose
 
 Android 上的 sing-box 代理客户端。UI 采用「航空航天玻璃 + 任务控制台」设计语言（参考 satelite-proxy）：深空底色、玻璃拟态卡片、环境光晕、马卡龙主题色、状态驱动 Hero、遥测仪表网格与底部玻璃 dock。
 
+<div align="center">
+
+<img src="assets/app.jpg" width="300" alt="应用截图" />
+
+</div>
+
 ## 功能
 
 ### 内核与代理
