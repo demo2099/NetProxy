@@ -177,46 +177,21 @@ fun DashboardPage(
 
             Spacer(Modifier.height(10.dp))
 
-            // ── Kicker：状态胶囊 + 运行时长（固定槽位，状态文字变化不推挤布局）
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Box(
-                    modifier = Modifier.width(124.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    StatusPill(
-                        text = when (status) {
-                            Status.Started -> "RUN"
-                            Status.Starting -> "CONNECTING"
-                            Status.Stopping -> "STOPPING"
-                            Status.Stopped -> "OFF"
-                        },
-                        color = when (status) {
-                            Status.Started -> colors.primary
-                            Status.Starting, Status.Stopping -> colors.warning
-                            Status.Stopped -> colors.textTertiary
-                        },
-                        active = running || status == Status.Starting,
-                    )
-                }
-                Box(
-                    modifier = Modifier.width(64.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (running && connectedAt > 0L) {
-                        TickingElapsed(connectedAt) { elapsed ->
-                            Text(
-                                elapsed,
-                                color = colors.textTertiary,
-                                fontSize = 12.sp,
-                                fontFamily = FontFamily.Monospace,
-                            )
-                        }
-                    }
-                }
-            }
+            // ── Kicker：状态胶囊居中（运行时长在下方核心卡片里，不在此重复）
+            StatusPill(
+                text = when (status) {
+                    Status.Started -> "RUN"
+                    Status.Starting -> "CONNECTING"
+                    Status.Stopping -> "STOPPING"
+                    Status.Stopped -> "OFF"
+                },
+                color = when (status) {
+                    Status.Started -> colors.primary
+                    Status.Starting, Status.Stopping -> colors.warning
+                    Status.Stopped -> colors.textTertiary
+                },
+                active = running || status == Status.Starting,
+            )
 
             Spacer(Modifier.height(10.dp))
 
