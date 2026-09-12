@@ -56,6 +56,8 @@ object ConfigBuilder {
         val regionGroupsEnabled: Boolean = false,
         /** When false, skip TUN so url-test can run without claiming the VPN. */
         val includeTun: Boolean = true,
+        /** Mobile-simple domain→action rules (SimpleRulesStore). */
+        val simpleRules: List<com.interstellar.proxy.data.SimpleRouteRule> = emptyList(),
     )
 
     /** A derived urltest group: region auto, or a custom-rule filter. */
@@ -84,7 +86,7 @@ object ConfigBuilder {
             putJsonObject("dns") { buildDns(options) }
             putJsonArray("inbounds") { buildInbounds(options) }
             putJsonArray("outbounds") { buildOutbounds(nodes, tags, options, regionGroups, customGroups) }
-            putJsonObject("route") { buildRoute(options, customGroups) }
+            putJsonObject("route") { buildRoute(options, customGroups, resolveSimpleRules(nodes, options)) }
             putJsonObject("experimental") {
                 putJsonObject("clash_api") {
                     put("external_controller", "127.0.0.1:${options.apiPort}")
@@ -589,9 +591,24 @@ object ConfigBuilder {
         put("independent_cache", true)
     }
 
+    /** nodeId → outbound tag for the current node pool. */
+    private fun resolveSimpleRules(
+        nodes: List<ProxyNode>,
+        options: BuildOptions,
+    ): List<Pair<String, String>> = options.simpleRules.mapNotNull { rule ->
+        val outbound = when (rule.action) {
+            com.interstellar.proxy.data.SimpleRouteRule.Action.DIRECT -> DIRECT_TAG
+            com.interstellar.proxy.data.SimpleRouteRule.Action.PROXY -> GROUP_TAG
+            com.interstellar.proxy.data.SimpleRouteRule.Action.NODE ->
+                tagFor(nodes, rule.nodeId ?: return@mapNotNull null) ?: return@mapNotNull null
+        }
+        rule.domain.trim().removePrefix("*.").removeSuffix(".") to outbound
+    }.filter { it.first.isNotBlank() }
+
     private fun kotlinx.serialization.json.JsonObjectBuilder.buildRoute(
         options: BuildOptions,
         customGroups: List<DerivedGroup>,
+        simpleRules: List<Pair<String, String>>,
     ) {
         putJsonArray("rules") {
             add(buildJsonObject { put("action", "sniff") })
@@ -601,6 +618,15 @@ object ConfigBuilder {
                     put("action", "hijack-dns")
                 },
             )
+            // user's manual domain rules beat every built-in rule
+            for ((suffix, outbound) in simpleRules) {
+                add(
+                    buildJsonObject {
+                        putJsonArray("domain_suffix") { add(suffix) }
+                        put("outbound", outbound)
+                    },
+                )
+            }
             if (options.bypassLan) {
                 add(
                     buildJsonObject {

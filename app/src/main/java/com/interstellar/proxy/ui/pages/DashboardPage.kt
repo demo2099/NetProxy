@@ -106,6 +106,7 @@ fun DashboardPage(
     val history by viewModel.history.collectAsState()
     val routingMode by viewModel.routingMode.collectAsState()
     val coreKind by viewModel.coreKind.collectAsState()
+    val proxyScope by viewModel.proxyScope.collectAsState()
     val mihomoConnectionCount by viewModel.mihomoConnectionCount.collectAsState()
     val probe by viewModel.probe.collectAsState()
     val running = status == Status.Started
@@ -278,33 +279,18 @@ fun DashboardPage(
 
             Spacer(Modifier.height(12.dp))
 
-            // ── 快速控制：路由模式（规则 / 全局 / 直连）+ 代理内核，标题与段控同行
-            val routingIndex = when (routingMode) {
-                "global" -> 1
-                "direct" -> 2
-                else -> 0
+            // ── 状态行: 只报状态, 点击进入分流设置修改 ──
+            val routingLabel = when (routingMode) {
+                "global" -> "强制代理"
+                "direct" -> "直连"
+                else -> "智能分流"
             }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    "路由",
-                    color = colors.textTertiary,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Medium,
-                    letterSpacing = 1.sp,
-                    modifier = Modifier.width(30.dp),
-                )
-                SegmentedControl(
-                    items = listOf("规则", "全局", "直连"),
-                    selected = routingIndex,
-                    onSelect = { i ->
-                        viewModel.setClashMode(listOf("rule", "global", "direct")[i])
-                    },
-                    modifier = Modifier.weight(1f),
-                    controlHeight = 40.dp,
-                )
+            ProxyStatusRow(label = "路由", value = routingLabel) {
+                onOpenSubPage(SettingsSubPage.Proxy)
+            }
+            Spacer(Modifier.height(6.dp))
+            ProxyStatusRow(label = "分流", value = proxyScope.label) {
+                onOpenSubPage(SettingsSubPage.Proxy)
             }
 
             Spacer(Modifier.height(8.dp))
@@ -692,6 +678,40 @@ private fun InstrumentCard(
 }
 
 /** All four dashboard instruments share one exact height so the grid stays uniform. */
+/** 轻量状态行: label + 当前值 + ›, 点击跳分流设置 */
+@Composable
+private fun ProxyStatusRow(label: String, value: String, onClick: () -> Unit) {
+    val colors = LocalInterstellarColors.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(38.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(colors.bgDeep)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp),
+    ) {
+        Text(
+            label,
+            color = colors.textTertiary,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium,
+            letterSpacing = 1.sp,
+            modifier = Modifier.width(30.dp),
+        )
+        Text(
+            value,
+            color = colors.textSecondary,
+            fontSize = 13.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Text("›", color = colors.textTertiary, fontSize = 16.sp)
+    }
+}
+
 private val InstrumentCardHeight = 104.dp
 
 /** Hero：笑脸或轨道样式，按压缩放。 */

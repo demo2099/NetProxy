@@ -117,6 +117,75 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _mihomoConnectionCount = MutableStateFlow(0)
     val mihomoConnectionCount: StateFlow<Int> = _mihomoConnectionCount
 
+    /** App-proxy scope as the UI sees it (drives the dashboard status row). */
+    data class ProxyScope(val whitelist: Boolean, val count: Int) {
+        val label: String
+            get() = when {
+                !com.interstellar.proxy.data.Settings.perAppProxyEnabled -> "全部应用"
+                whitelist -> "白名单 · $count"
+                else -> "黑名单 · $count"
+            }
+    }
+
+    private val _proxyScope = MutableStateFlow(readProxyScope())
+    val proxyScope: StateFlow<ProxyScope> = _proxyScope
+
+    private fun readProxyScope() = ProxyScope(
+        whitelist = Settings.perAppProxyMode == Settings.PER_APP_PROXY_INCLUDE,
+        count = Settings.perAppProxyList.size,
+    )
+
+    fun setProxyScope(mode: String) {
+        when (mode) {
+            "all" -> Settings.perAppProxyEnabled = false
+            "whitelist" -> {
+                Settings.perAppProxyMode = Settings.PER_APP_PROXY_INCLUDE
+                Settings.perAppProxyEnabled = true
+            }
+
+            "blacklist" -> {
+                Settings.perAppProxyMode = Settings.PER_APP_PROXY_EXCLUDE
+                Settings.perAppProxyEnabled = true
+            }
+        }
+        _proxyScope.value = readProxyScope()
+        refreshProxyConfig()
+    }
+
+    // ---- simple routing rules ----
+
+    private val _simpleRules = MutableStateFlow(com.interstellar.proxy.data.SimpleRulesStore.rules.toList())
+    val simpleRules: StateFlow<List<com.interstellar.proxy.data.SimpleRouteRule>> = _simpleRules
+
+    fun upsertSimpleRule(rule: com.interstellar.proxy.data.SimpleRouteRule) {
+        com.interstellar.proxy.data.SimpleRulesStore.upsert(rule)
+        _simpleRules.value = com.interstellar.proxy.data.SimpleRulesStore.rules.toList()
+        refreshProxyConfig()
+    }
+
+    fun removeSimpleRule(id: String) {
+        com.interstellar.proxy.data.SimpleRulesStore.remove(id)
+        _simpleRules.value = com.interstellar.proxy.data.SimpleRulesStore.rules.toList()
+        refreshProxyConfig()
+    }
+
+    fun setSimpleRuleEnabled(id: String, enabled: Boolean) {
+        com.interstellar.proxy.data.SimpleRulesStore.setEnabled(id, enabled)
+        _simpleRules.value = com.interstellar.proxy.data.SimpleRulesStore.rules.toList()
+        refreshProxyConfig()
+    }
+
+    /** id/tag/name triples of the current node pool for the rule picker. */
+    fun nodePickerEntries(): List<Triple<String, String, String>> {
+        val pool = SubscriptionRepository.poolOf(
+            _subscriptions.value,
+            _activeSubscriptionId.value,
+            _mixEnabled.value,
+            _mixSubscriptionIds.value,
+        )
+        return ConfigBuilder.tagsFor(pool).zip(pool) { tag, node -> Triple(node.id, tag, node.name) }
+    }
+
     /** tag → latest url-test delay (pushed via the outbounds stream). */
     private val _delays = MutableStateFlow<Map<String, Int>>(emptyMap())
     val delays: StateFlow<Map<String, Int>> = _delays

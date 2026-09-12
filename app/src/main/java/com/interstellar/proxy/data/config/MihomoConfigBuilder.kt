@@ -69,7 +69,7 @@ object MihomoConfigBuilder {
             put("dns", buildDns(options))
             put("proxies", buildProxies(usable, tags))
             put("proxy-groups", buildGroups(tags, regionGroups, customGroups))
-            put("rules", buildRules(options, customGroups))
+            put("rules", buildRules(nodes, options, customGroups))
         }
         return Yaml.write(root)
     }
@@ -433,7 +433,22 @@ object MihomoConfigBuilder {
 
     // ---- rules ----
 
-    private fun buildRules(options: ConfigBuilder.BuildOptions, customGroups: List<DerivedGroup>) = buildList {
+    private fun buildRules(
+        nodes: List<ProxyNode>,
+        options: ConfigBuilder.BuildOptions,
+        customGroups: List<DerivedGroup>,
+    ) = buildList {
+        // user's manual domain rules beat every built-in rule
+        for (rule in options.simpleRules) {
+            val outbound = when (rule.action) {
+                com.interstellar.proxy.data.SimpleRouteRule.Action.DIRECT -> DIRECT
+                com.interstellar.proxy.data.SimpleRouteRule.Action.PROXY -> GROUP_TAG
+                com.interstellar.proxy.data.SimpleRouteRule.Action.NODE ->
+                    ConfigBuilder.tagFor(nodes, rule.nodeId ?: continue) ?: continue
+            }
+            val suffix = rule.domain.trim().removePrefix("*.").removeSuffix(".")
+            if (suffix.isNotBlank()) add("DOMAIN-SUFFIX,$suffix,$outbound")
+        }
         if (options.bypassLan) {
             for (cidr in listOf("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")) add("IP-CIDR,$cidr,$DIRECT,no-resolve")
             add("IP-CIDR6,fc00::/7,$DIRECT,no-resolve")

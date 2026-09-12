@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,7 +54,7 @@ fun setThemeChangedListener(listener: () -> Unit) {
     onThemeChanged = listener
 }
 
-enum class SettingsSubPage { Settings, PerApp, Connections, Logs, Rules, Dns }
+enum class SettingsSubPage { Settings, PerApp, Connections, Logs, Rules, Dns, Proxy }
 
 /** Bottom-dock root tabs (satelite's navbar, phone layout). */
 enum class MainTab { Home, Nodes, Subscriptions, Logs, Settings }
@@ -66,6 +67,7 @@ fun settingsSubPageTitle(page: SettingsSubPage): String = when (page) {
     SettingsSubPage.Logs -> "系统日志"
     SettingsSubPage.Rules -> "分流规则"
     SettingsSubPage.Dns -> "DNS 解析"
+    SettingsSubPage.Proxy -> "分流"
 }
 
 private fun isIgnoringBatteryOptimizations(context: android.content.Context): Boolean =
@@ -133,66 +135,24 @@ fun SettingsPage(onOpen: (SettingsSubPage) -> Unit, onProxyChanged: () -> Unit =
 
         Spacer(Modifier.height(22.dp))
 
-        // ---- 连接 ----
-        PrefSectionLabel("连接")
-        GlassCard(modifier = Modifier.fillMaxWidth(), contentPadding = 6.dp) {
-            var bypassLan by remember { mutableStateOf(Settings.bypassLanEnabled) }
-            var bypassCn by remember { mutableStateOf(Settings.bypassCnEnabled) }
-            var adBlock by remember { mutableStateOf(Settings.adBlockEnabled) }
-            var regionGroups by remember { mutableStateOf(Settings.regionGroupsEnabled) }
-            PrefToggleRow(
-                title = "绕过局域网",
-                desc = "访问 NAS、打印机、路由器不走代理",
-                checked = bypassLan,
-                onChange = {
-                    bypassLan = it
-                    Settings.bypassLanEnabled = it
-                    onProxyChanged()
-                },
-            )
-            PrefToggleRow(
-                title = "绕过大陆网站",
-                desc = "大陆域名与 IP 直连不走代理",
-                checked = bypassCn,
-                onChange = {
-                    bypassCn = it
-                    Settings.bypassCnEnabled = it
-                    onProxyChanged()
-                },
-            )
-            PrefToggleRow(
-                title = "去广告",
-                desc = "拦截广告与跟踪域名",
-                checked = adBlock,
-                onChange = {
-                    adBlock = it
-                    Settings.adBlockEnabled = it
-                    onProxyChanged()
-                },
-            )
-            PrefToggleRow(
-                title = "按国家分组",
-                desc = "节点页提供香港、新加坡等国家测速组",
-                checked = regionGroups,
-                onChange = {
-                    regionGroups = it
-                    Settings.regionGroupsEnabled = it
-                    onProxyChanged()
-                },
-            )
-        }
-        IosSectionFooter("修改后立即重新生成配置,内核运行中自动热重载。")
-
-        Spacer(Modifier.height(22.dp))
-
         // ---- 分流 ----
         PrefSectionLabel("分流")
         GlassCard(modifier = Modifier.fillMaxWidth(), contentPadding = 6.dp) {
-            val ruleTotal = CustomRulesStore.rules.size
-            val ruleOn = CustomRulesStore.rules.count { it.enabled }
+            val ruleTotal = CustomRulesStore.rules.size + com.interstellar.proxy.data.SimpleRulesStore.rules.size
+            val ruleOn = com.interstellar.proxy.data.SimpleRulesStore.rules.count { it.enabled }
+            PrefNavRow(
+                title = "分流设置",
+                desc = "路由模式 / 应用分流(白名单·黑名单) / 分流细则",
+                value = when (Settings.outboundMode) {
+                    com.interstellar.proxy.data.config.ConfigBuilder.OutboundMode.GLOBAL -> "强制代理"
+                    com.interstellar.proxy.data.config.ConfigBuilder.OutboundMode.DIRECT -> "直连"
+                    else -> "智能分流"
+                },
+                onClick = { onOpen(SettingsSubPage.Proxy) },
+            )
             PrefNavRow(
                 title = "分流规则",
-                desc = "域名 → 节点关键词独立测速池",
+                desc = "域名 → 直连 / 强制代理 / 指定节点",
                 value = when {
                     ruleTotal == 0 -> "未设置"
                     else -> "$ruleOn 条启用"
@@ -209,16 +169,6 @@ fun SettingsPage(onOpen: (SettingsSubPage) -> Unit, onProxyChanged: () -> Unit =
                     else -> "$dnsOn 条启用"
                 },
                 onClick = { onOpen(SettingsSubPage.Dns) },
-            )
-            PrefNavRow(
-                title = "分应用代理",
-                desc = "白名单 / 黑名单控制哪些应用走代理",
-                value = if (Settings.perAppProxyEnabled) {
-                    if (Settings.perAppProxyMode == Settings.PER_APP_PROXY_INCLUDE) "白名单" else "黑名单"
-                } else {
-                    "关闭"
-                },
-                onClick = { onOpen(SettingsSubPage.PerApp) },
             )
         }
 
@@ -502,5 +452,137 @@ private fun AccentDot(preset: Accents.Preset, selected: Boolean, modifier: Modif
                 maxLines = 1,
             )
         }
+    }
+}
+
+/**
+ * 分流专用设置页: 路由模式 + 应用分流(白/黑名单) + 智能分流细则 + 规则入口。
+ * 首页的状态行跳到这里做实际修改(首页只报状态)。
+ */
+@Composable
+fun ProxySettingsPage(viewModel: com.interstellar.proxy.ui.AppViewModel, onOpen: (SettingsSubPage) -> Unit) {
+    val colors = LocalInterstellarColors.current
+    val routingMode by viewModel.routingMode.collectAsState()
+    val proxyScope by viewModel.proxyScope.collectAsState()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp),
+    ) {
+        Spacer(Modifier.height(10.dp))
+
+        // ---- 路由模式 ----
+        PrefSectionLabel("路由模式")
+        GlassCard(modifier = Modifier.fillMaxWidth(), contentPadding = 6.dp) {
+            val modes = listOf("rule" to "智能分流", "global" to "强制代理", "direct" to "直连")
+            PrefSegRow(
+                title = "模式",
+                desc = "被代理流量的目的地走向",
+                items = modes.map { it.second },
+                selected = modes.indexOfFirst { it.first == routingMode }.coerceAtLeast(0),
+                layout = SegLayout.Below,
+                onSelect = { i -> viewModel.setClashMode(modes[i].first) },
+            )
+        }
+        IosSectionFooter("智能分流按目的地规则(大陆/局域网/自定义)分流;强制代理全部经节点;直连保持 VPN 但不代理。")
+
+        Spacer(Modifier.height(22.dp))
+
+        // ---- 应用分流 ----
+        PrefSectionLabel("应用分流")
+        GlassCard(modifier = Modifier.fillMaxWidth(), contentPadding = 6.dp) {
+            val scopes = listOf("all", "whitelist", "blacklist")
+            val scopeIndex = when {
+                !Settings.perAppProxyEnabled -> 0
+                Settings.perAppProxyMode == Settings.PER_APP_PROXY_INCLUDE -> 1
+                else -> 2
+            }
+            PrefSegRow(
+                title = "范围",
+                desc = "哪些应用的流量进入代理",
+                items = listOf("全部应用", "白名单", "黑名单"),
+                selected = scopeIndex,
+                layout = SegLayout.Below,
+                onSelect = { i -> viewModel.setProxyScope(scopes[i]) },
+            )
+            PrefNavRow(
+                title = "选择应用",
+                desc = if (scopeIndex == 1) "白名单内的应用走代理" else if (scopeIndex == 2) "黑名单内的应用不走代理" else "启用白/黑名单后选择应用",
+                value = if (scopeIndex == 0) null else "已选 ${Settings.perAppProxyList.size} 个",
+                onClick = { onOpen(SettingsSubPage.PerApp) },
+            )
+        }
+        IosSectionFooter("应用分流在 VPN 层生效:更换范围后重连一次即完全应用到 mihomo。")
+
+        Spacer(Modifier.height(22.dp))
+
+        // ---- 智能分流细则 ----
+        PrefSectionLabel("智能分流细则")
+        GlassCard(modifier = Modifier.fillMaxWidth(), contentPadding = 6.dp) {
+            var bypassLan by remember { mutableStateOf(Settings.bypassLanEnabled) }
+            var bypassCn by remember { mutableStateOf(Settings.bypassCnEnabled) }
+            var adBlock by remember { mutableStateOf(Settings.adBlockEnabled) }
+            var regionGroups by remember { mutableStateOf(Settings.regionGroupsEnabled) }
+            PrefToggleRow(
+                title = "绕过局域网",
+                desc = "访问 NAS、打印机、路由器不走代理",
+                checked = bypassLan,
+                onChange = {
+                    bypassLan = it
+                    Settings.bypassLanEnabled = it
+                    viewModel.refreshProxyConfig()
+                },
+            )
+            PrefToggleRow(
+                title = "绕过大陆网站",
+                desc = "大陆域名与 IP 直连不走代理(仅智能分流)",
+                checked = bypassCn,
+                onChange = {
+                    bypassCn = it
+                    Settings.bypassCnEnabled = it
+                    viewModel.refreshProxyConfig()
+                },
+            )
+            PrefToggleRow(
+                title = "去广告",
+                desc = "拦截广告与跟踪域名",
+                checked = adBlock,
+                onChange = {
+                    adBlock = it
+                    Settings.adBlockEnabled = it
+                    viewModel.refreshProxyConfig()
+                },
+            )
+            PrefToggleRow(
+                title = "按国家分组",
+                desc = "节点页提供香港、新加坡等国家测速组",
+                checked = regionGroups,
+                onChange = {
+                    regionGroups = it
+                    Settings.regionGroupsEnabled = it
+                    viewModel.refreshProxyConfig()
+                },
+            )
+        }
+        IosSectionFooter("修改后立即重新生成配置,内核运行中自动热重载。")
+
+        Spacer(Modifier.height(22.dp))
+
+        // ---- 规则入口 ----
+        PrefSectionLabel("手动规则")
+        GlassCard(modifier = Modifier.fillMaxWidth(), contentPadding = 6.dp) {
+            val ruleOn = com.interstellar.proxy.data.SimpleRulesStore.rules.count { it.enabled }
+            PrefNavRow(
+                title = "分流规则",
+                desc = "域名 → 直连 / 强制代理 / 指定节点",
+                value = if (ruleOn == 0) "未设置" else "$ruleOn 条启用",
+                onClick = { onOpen(SettingsSubPage.Rules) },
+            )
+        }
+        IosSectionFooter("手动规则优先级最高,先于大陆绕过等内置规则匹配。")
+
+        Spacer(Modifier.height(24.dp))
     }
 }

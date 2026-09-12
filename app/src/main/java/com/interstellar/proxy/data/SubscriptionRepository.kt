@@ -198,6 +198,7 @@ object SubscriptionRepository {
                 Settings.outboundMode == ConfigBuilder.OutboundMode.RULE,
             regionGroupsEnabled = regionGroups,
             includeTun = includeTun,
+            simpleRules = com.interstellar.proxy.data.SimpleRulesStore.enabled(),
         )
         val coreKind = Settings.coreKind
         val content =
