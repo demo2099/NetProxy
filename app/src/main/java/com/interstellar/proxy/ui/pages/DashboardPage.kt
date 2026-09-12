@@ -103,7 +103,7 @@ fun DashboardPage(
     val connectedAt by viewModel.connectedAt.collectAsState()
     val connections by connectionsViewModel.connections.collectAsState()
     val history by viewModel.history.collectAsState()
-    val clashMode by viewModel.clashMode.collectAsState()
+    val routingMode by viewModel.routingMode.collectAsState()
     val probe by viewModel.probe.collectAsState()
     val running = status == Status.Started
     val activeConnectionCount = connections.count { !it.closed }
@@ -290,54 +290,22 @@ fun DashboardPage(
 
             Spacer(Modifier.height(16.dp))
 
-            // ── 快速控制：路由模式 + 自动选择
-            val routingMode = if (running) clashMode.current else Settings.outboundMode.name.lowercase()
+            // ── 快速控制：路由模式（规则 / 全局 / 直连）
             val routingIndex = when (routingMode) {
                 "global" -> 1
                 "direct" -> 2
                 else -> 0
             }
-            val currentSel = mainGroup?.selected?.takeIf { it.isNotBlank() } ?: storedSelected
-            val autoIndex = if (currentSel == ConfigBuilder.AUTO_TAG || currentSel.isBlank()) 1 else 0
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Column(modifier = Modifier.weight(1.15f)) {
-                    InstrumentCaption("路由")
-                    SegmentedControl(
-                        items = listOf("规则", "全局", "直连"),
-                        selected = routingIndex,
-                        onSelect = { i ->
-                            viewModel.setClashMode(listOf("rule", "global", "direct")[i])
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    InstrumentCaption("选择")
-                    SegmentedControl(
-                        items = listOf("手动", "内核"),
-                        selected = autoIndex,
-                        onSelect = { i ->
-                            if (i == 1) {
-                                viewModel.selectNode(ConfigBuilder.GROUP_TAG, ConfigBuilder.AUTO_TAG)
-                            } else {
-                                pickConcreteNode(
-                                    viewModel = viewModel,
-                                    groups = groups,
-                                    storedAuto = currentSel == ConfigBuilder.AUTO_TAG,
-                                    subscriptions = subscriptions,
-                                    activeSubscriptionId = activeSubscriptionId,
-                                    mixEnabled = mixEnabled,
-                                    mixSubscriptionIds = mixSubscriptionIds,
-                                    noCandidates = { onOpenTab(MainTab.Nodes) },
-                                )
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
+            Column(modifier = Modifier.fillMaxWidth()) {
+                InstrumentCaption("路由")
+                SegmentedControl(
+                    items = listOf("规则", "全局", "直连"),
+                    selected = routingIndex,
+                    onSelect = { i ->
+                        viewModel.setClashMode(listOf("rule", "global", "direct")[i])
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
 
             Spacer(Modifier.height(12.dp))
@@ -350,8 +318,8 @@ fun DashboardPage(
                 GlassButton(
                     text = when {
                         running -> "断开连接"
-                        status == Status.Starting -> "连接中…"
-                        else -> "连接"
+                        status == Status.Starting -> "启动中…"
+                        else -> "启动代理"
                     },
                     style = if (running) GlassButtonStyle.Danger else GlassButtonStyle.Primary,
                     enabled = !busy && status != Status.Starting,
@@ -675,37 +643,6 @@ private fun HeroButton(
         } else {
             FaceMark(status = status, faceSize = heroSize)
         }
-    }
-}
-
-/** 切回手动时挑一个具体节点：优先当前解析的叶子，其次池内第一个。 */
-private fun pickConcreteNode(
-    viewModel: AppViewModel,
-    groups: List<OutboundGroup>,
-    storedAuto: Boolean,
-    subscriptions: List<SubscriptionRepository.Subscription>,
-    activeSubscriptionId: String,
-    mixEnabled: Boolean,
-    mixSubscriptionIds: Set<String>,
-    noCandidates: () -> Unit,
-) {
-    if (!storedAuto) return // 已经是手动
-    val mainGroup = groups.find { it.tag == ConfigBuilder.GROUP_TAG }
-    val candidate = mainGroup?.let { groupItems(it) }
-        ?.firstOrNull { it.tag != ConfigBuilder.AUTO_TAG && it.tag != ConfigBuilder.GROUP_TAG }?.tag
-        ?: run {
-            val pool = SubscriptionRepository.poolOf(
-                subscriptions,
-                activeSubscriptionId,
-                mixEnabled,
-                mixSubscriptionIds,
-            )
-            ConfigBuilder.tagsFor(pool).firstOrNull { it != ConfigBuilder.AUTO_TAG }
-        }
-    if (candidate != null) {
-        viewModel.selectNode(ConfigBuilder.GROUP_TAG, candidate)
-    } else {
-        noCandidates()
     }
 }
 

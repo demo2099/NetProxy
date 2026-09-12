@@ -83,6 +83,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _clashMode = MutableStateFlow(ClashModeState())
     val clashMode: StateFlow<ClashModeState> = _clashMode
 
+    /**
+     * Routing mode as the UI sees it ("rule" | "global" | "direct"). The mode
+     * is BAKED into the generated config (route.final / CN bypass rules), so
+     * this flow is driven by the persisted setting plus optimistic updates —
+     * the core's clash-mode callback alone can't reflect it.
+     */
+    private val _routingMode = MutableStateFlow(Settings.outboundMode.name.lowercase())
+    val routingMode: StateFlow<String> = _routingMode
+
     private val _groups = MutableStateFlow<List<OutboundGroup>>(emptyList())
     val groups: StateFlow<List<OutboundGroup>> = _groups
 
@@ -227,13 +236,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
             override fun initializeClashMode(modeList: List<String>, currentMode: String) {
                 _clashMode.value = ClashModeState(modeList, currentMode)
+                normalizeRoutingMode(currentMode)?.let { _routingMode.value = it }
             }
 
             override fun updateClashMode(newMode: String) {
                 _clashMode.value = _clashMode.value.copy(current = newMode)
+                normalizeRoutingMode(newMode)?.let { _routingMode.value = it }
             }
         },
     )
+
+    private fun normalizeRoutingMode(mode: String): String? =
+        mode.lowercase().takeIf { it == "rule" || it == "global" || it == "direct" }
 
     init {
         ensureApiSecret()
@@ -418,18 +432,27 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setClashMode(mode: String) {
+        val normalized = normalizeRoutingMode(mode) ?: return
+        // optimistic: the seg moves immediately, the reload below confirms it
+        _routingMode.value = normalized
         viewModelScope.launch(Dispatchers.IO) {
+            // keep the core's clash API state in sync (the actual routing is
+            // baked into the regenerated config below)
             runCatching {
-                CommandTarget.standaloneClient().setClashMode(mode)
+                CommandTarget.standaloneClient().setClashMode(normalized)
             }
-            Settings.outboundMode = when (mode) {
+            Settings.outboundMode = when (normalized) {
                 "global" -> ConfigBuilder.OutboundMode.GLOBAL
                 "direct" -> ConfigBuilder.OutboundMode.DIRECT
                 else -> ConfigBuilder.OutboundMode.RULE
             }
             refreshSplitRuleStatus()
-            // mode is part of the generated config — regenerate for next start
-            SubscriptionRepository.regenerateActiveConfig()
+            // regenerate with the new mode, then hot-reload so a running core
+            // picks up the new route.final / CN bypass rules immediately
+            val config = SubscriptionRepository.regenerateActiveConfig()
+            if (config != null && _status.value == Status.Started) {
+                runCatching { CommandTarget.standaloneClient().serviceReload() }
+            }
         }
     }
 
