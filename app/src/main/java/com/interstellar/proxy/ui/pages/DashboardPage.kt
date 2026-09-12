@@ -291,11 +291,11 @@ fun DashboardPage(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                StatusChip(label = "路由", value = routingLabel) {
+                StatusChip(label = "路由模式", value = routingLabel) {
                     onOpenSubPage(SettingsSubPage.Proxy)
                 }
                 Spacer(Modifier.width(10.dp))
-                StatusChip(label = "分流", value = if (scopeOn) "开" else "关") {
+                StatusChip(label = "应用分流", value = if (scopeOn) "开" else "关") {
                     onOpenSubPage(SettingsSubPage.Proxy)
                 }
             }
