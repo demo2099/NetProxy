@@ -216,9 +216,9 @@ fun DashboardPage(
 
             Spacer(Modifier.height(10.dp))
 
-            // ── 节点名（大字，自动缩放）：点击进入节点页
+            // ── 节点名（大字，自动缩放）：连接中显示实时出口，未连接显示下次将使用的节点
             val connected = status == Status.Started || status == Status.Starting
-            val resolvedNode = if (connected) nodeRowValue(groups, delays, mainGroup, storedSelected) else null
+            val resolvedNode = nodeRowValue(groups, delays, mainGroup, storedSelected)
             val picking = connected && (resolvedNode == "自动" || resolvedNode == "未选择")
             val pickPulse by rememberInfiniteTransition(label = "pickPulse").animateFloat(
                 initialValue = 0.35f,
@@ -231,15 +231,14 @@ fun DashboardPage(
             )
             val nodeTitle = when {
                 picking -> "选择中…"
-                connected -> resolvedNode ?: ""
-                else -> "查看订阅"
+                resolvedNode != "未选择" -> resolvedNode
+                else -> "未选择节点"
             }
             Text(
                 nodeTitle,
                 color = when {
                     picking -> colors.textTertiary
-                    connected -> colors.text
-                    else -> colors.accent
+                    else -> colors.text
                 },
                 fontSize = when {
                     nodeTitle.length > 18 -> 18.sp
