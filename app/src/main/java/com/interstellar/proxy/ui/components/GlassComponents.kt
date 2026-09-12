@@ -201,13 +201,17 @@ fun StatusPill(
 ) {
     val colors = LocalInterstellarColors.current
     val light = 0.2126f * colors.bg.red + 0.7152f * colors.bg.green + 0.0722f * colors.bg.blue > 0.5f
-    val transition = rememberInfiniteTransition(label = "pillBreath")
-    val breath by transition.animateFloat(
-        initialValue = 0.45f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1300, easing = LinearEasing), RepeatMode.Reverse),
-        label = "pillBreathAlpha",
-    )
+    // breathing halo only ticks while active — no idle per-frame redraws
+    val breath = if (active) {
+        rememberInfiniteTransition(label = "pillBreath").animateFloat(
+            initialValue = 0.45f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(1300, easing = LinearEasing), RepeatMode.Reverse),
+            label = "pillBreathAlpha",
+        ).value
+    } else {
+        0f
+    }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
@@ -453,19 +457,27 @@ fun OrbitHero(
         label = "orbitColor",
     )
     val running = status == Status.Started
-    val idle = rememberInfiniteTransition(label = "orbit")
-    val angle by idle.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(11_000, easing = LinearEasing)),
-        label = "orbitAngle",
-    )
-    val pulse by idle.animateFloat(
-        initialValue = 0.6f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Reverse),
-        label = "orbitPulse",
-    )
+    // orbit sweep + pulse only tick while the hero is live; a stopped orbit is static
+    val angle: Float
+    val pulse: Float
+    if (running || status == Status.Starting) {
+        val idle = rememberInfiniteTransition(label = "orbit")
+        angle = idle.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(tween(11_000, easing = LinearEasing)),
+            label = "orbitAngle",
+        ).value
+        pulse = idle.animateFloat(
+            initialValue = 0.6f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Reverse),
+            label = "orbitPulse",
+        ).value
+    } else {
+        angle = 0f
+        pulse = 1f
+    }
     val orbitScale by animateFloatAsState(
         targetValue = if (status == Status.Starting) pulse else if (running) 1f + (pulse - 1f) * 0.25f else 1f,
         animationSpec = spring(dampingRatio = 0.8f, stiffness = 200f),

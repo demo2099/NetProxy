@@ -107,14 +107,6 @@ fun DashboardPage(
     val probe by viewModel.probe.collectAsState()
     val running = status == Status.Started
     val activeConnectionCount = connections.count { !it.closed }
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(running) {
-        if (!running) return@LaunchedEffect
-        while (true) {
-            now = System.currentTimeMillis()
-            kotlinx.coroutines.delay(1000)
-        }
-    }
     val mainGroup = groups.find { it.tag == ConfigBuilder.GROUP_TAG }
     // tag → protocol (VLESS / TROJAN / …) for the current node pool
     val protocolByTag = remember(subscriptions, activeSubscriptionId, mixEnabled, mixSubscriptionIds) {
@@ -205,12 +197,14 @@ fun DashboardPage(
                     active = running || status == Status.Starting,
                 )
                 if (running && connectedAt > 0L) {
-                    Text(
-                        formatElapsed(now - connectedAt),
-                        color = colors.textTertiary,
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace,
-                    )
+                    TickingElapsed(connectedAt) { elapsed ->
+                        Text(
+                            elapsed,
+                            color = colors.textTertiary,
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                        )
+                    }
                 }
             }
 
@@ -220,15 +214,20 @@ fun DashboardPage(
             val connected = status == Status.Started || status == Status.Starting
             val resolvedNode = nodeRowValue(groups, delays, mainGroup, storedSelected)
             val picking = connected && (resolvedNode == "自动" || resolvedNode == "未选择")
-            val pickPulse by rememberInfiniteTransition(label = "pickPulse").animateFloat(
-                initialValue = 0.35f,
-                targetValue = 1f,
-                animationSpec = infiniteRepeatable(
-                    tween(650, easing = LinearEasing),
-                    RepeatMode.Reverse,
-                ),
-                label = "pickAlpha",
-            )
+            // 选择中呼吸动画只在 picking 时运转,其余时间零帧开销
+            val pickPulse = if (picking) {
+                rememberInfiniteTransition(label = "pickPulse").animateFloat(
+                    initialValue = 0.35f,
+                    targetValue = 1f,
+                    animationSpec = infiniteRepeatable(
+                        tween(650, easing = LinearEasing),
+                        RepeatMode.Reverse,
+                    ),
+                    label = "pickAlpha",
+                ).value
+            } else {
+                1f
+            }
             val nodeTitle = when {
                 picking -> "选择中…"
                 resolvedNode != "未选择" -> resolvedNode
@@ -352,14 +351,27 @@ fun DashboardPage(
                     onClick = { onOpenSubPage(SettingsSubPage.Logs) },
                     modifier = Modifier.weight(1f),
                 ) {
-                    Text(
-                        if (running && connectedAt > 0L) formatElapsed(now - connectedAt) else "—",
-                        color = colors.text,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        fontFamily = FontFamily.Monospace,
-                        maxLines = 1,
-                    )
+                    if (running && connectedAt > 0L) {
+                        TickingElapsed(connectedAt) { elapsed ->
+                            Text(
+                                elapsed,
+                                color = colors.text,
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                fontFamily = FontFamily.Monospace,
+                                maxLines = 1,
+                            )
+                        }
+                    } else {
+                        Text(
+                            "—",
+                            color = colors.text,
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1,
+                        )
+                    }
                     Spacer(Modifier.height(6.dp))
                     Text(
                         "$CORE_VERSION · $activeConnectionCount 连接",
@@ -643,6 +655,19 @@ private fun HeroButton(
             FaceMark(status = status, faceSize = heroSize)
         }
     }
+}
+
+/** 每秒走字的运行时长：ticker 状态收在叶子组件里,不触发整页重组。 */
+@Composable
+private fun TickingElapsed(connectedAt: Long, content: @Composable (String) -> Unit) {
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(connectedAt) {
+        while (true) {
+            now = System.currentTimeMillis()
+            kotlinx.coroutines.delay(1000)
+        }
+    }
+    content(formatElapsed(now - connectedAt))
 }
 
 private fun formatElapsed(ms: Long): String {

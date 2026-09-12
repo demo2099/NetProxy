@@ -69,43 +69,57 @@ fun FaceMark(
         animationSpec = tween(360),
         label = "glowColor",
     )
-    val idle = rememberInfiniteTransition(label = "faceIdle")
-    val pulse by idle.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.045f,
-        animationSpec = infiniteRepeatable(
-            tween(900, easing = LinearEasing),
-            RepeatMode.Reverse,
-        ),
-        label = "pulse",
-    )
-    val breathe by idle.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.018f,
-        animationSpec = infiniteRepeatable(
-            tween(2400, easing = LinearEasing),
-            RepeatMode.Reverse,
-        ),
-        label = "breathe",
-    )
-    val relaxPhase by idle.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            tween(6400, easing = LinearEasing),
-            RepeatMode.Restart,
-        ),
-        label = "relaxPhase",
-    )
-    val blinkPhase by idle.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            tween(4400, easing = LinearEasing),
-            RepeatMode.Restart,
-        ),
-        label = "blinkPhase",
-    )
+    // idle animations only tick while the face is alive (starting/started/stopping);
+    // a stopped face is fully static so the pager swipe never fights per-frame redraws
+    val animateIdle = status != Status.Stopped
+    val pulse: Float
+    val breathe: Float
+    val relaxPhase: Float
+    val blinkPhase: Float
+    if (animateIdle) {
+        val idle = rememberInfiniteTransition(label = "faceIdle")
+        pulse = idle.animateFloat(
+            initialValue = 1f,
+            targetValue = 1.045f,
+            animationSpec = infiniteRepeatable(
+                tween(900, easing = LinearEasing),
+                RepeatMode.Reverse,
+            ),
+            label = "pulse",
+        ).value
+        breathe = idle.animateFloat(
+            initialValue = 1f,
+            targetValue = 1.018f,
+            animationSpec = infiniteRepeatable(
+                tween(2400, easing = LinearEasing),
+                RepeatMode.Reverse,
+            ),
+            label = "breathe",
+        ).value
+        relaxPhase = idle.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                tween(6400, easing = LinearEasing),
+                RepeatMode.Restart,
+            ),
+            label = "relaxPhase",
+        ).value
+        blinkPhase = idle.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                tween(4400, easing = LinearEasing),
+                RepeatMode.Restart,
+            ),
+            label = "blinkPhase",
+        ).value
+    } else {
+        pulse = 1f
+        breathe = 1f
+        relaxPhase = 0f
+        blinkPhase = 1f
+    }
     val relaxActive by animateFloatAsState(
         targetValue = if (connected) 1f else 0f,
         animationSpec = tween(420),
