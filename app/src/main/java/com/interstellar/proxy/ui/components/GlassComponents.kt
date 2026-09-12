@@ -132,9 +132,9 @@ fun GlassCard(
 enum class GlassButtonStyle { Primary, Secondary, Danger }
 
 /**
- * Capsule action button — flat but machined: solid fill with a darker
- * hairline edge (like a physical key's milled rim), generous proportions
- * and tracked type. No gradients, no glow.
+ * Capsule action button — outlined with a very light tinted fill:
+ * accent at ~13% under a colored hairline, accent text. The secondary
+ * action stays neutral glass.
  */
 @Composable
 fun GlassButton(
@@ -147,15 +147,15 @@ fun GlassButton(
 ) {
     val colors = LocalInterstellarColors.current
     val light = 0.2126f * colors.bg.red + 0.7152f * colors.bg.green + 0.0722f * colors.bg.blue > 0.5f
-    val fg = when (style) {
-        GlassButtonStyle.Primary -> colors.onPrimary
-        GlassButtonStyle.Danger -> Color.White
-        GlassButtonStyle.Secondary -> colors.text
-    }
-    val base = when (style) {
+    val accent = when (style) {
         GlassButtonStyle.Primary -> colors.primary
         GlassButtonStyle.Danger -> colors.danger
-        GlassButtonStyle.Secondary -> Color.Transparent
+        GlassButtonStyle.Secondary -> colors.text
+    }
+    val fg = when (style) {
+        GlassButtonStyle.Primary -> colors.primary
+        GlassButtonStyle.Danger -> colors.danger
+        GlassButtonStyle.Secondary -> colors.text
     }
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -169,14 +169,9 @@ fun GlassButton(
                         Modifier.glassSurface(50.dp, light, colors.panelTop, colors.panelBottom, colors.border)
 
                     else -> Modifier
-                        .background(base)
-                        // milled rim: one step darker than the fill — defines the
-                        // edge without any gradient or shadow
-                        .border(
-                            1.dp,
-                            lerp(base, Color.Black, if (light) 0.22f else 0.30f),
-                            RoundedCornerShape(50),
-                        )
+                        // very light tinted fill + colored hairline
+                        .background(accent.copy(alpha = 0.13f))
+                        .border(1.dp, accent.copy(alpha = 0.55f), RoundedCornerShape(50))
                 },
             )
             .defaultMinSize(minWidth = 104.dp, minHeight = 48.dp)
