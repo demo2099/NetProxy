@@ -152,7 +152,7 @@ fun SettingsPage(onOpen: (SettingsSubPage) -> Unit, onProxyChanged: () -> Unit =
                 title = "路由设置",
                 desc = "路由模式 / 规则细则 / 路由规则",
                 value = when (Settings.outboundMode) {
-                    com.interstellar.proxy.data.config.ConfigBuilder.OutboundMode.GLOBAL -> "代理"
+                    com.interstellar.proxy.data.config.ConfigBuilder.OutboundMode.GLOBAL -> "全局"
                     com.interstellar.proxy.data.config.ConfigBuilder.OutboundMode.DIRECT -> "直连"
                     else -> "规则"
                 },
@@ -475,7 +475,7 @@ fun ProxySettingsPage(viewModel: com.interstellar.proxy.ui.AppViewModel, onOpen:
         // ---- 路由模式 ----
         PrefSectionLabel("路由模式")
         GlassCard(modifier = Modifier.fillMaxWidth(), contentPadding = 6.dp) {
-            val modes = listOf("rule" to "规则", "global" to "代理", "direct" to "直连")
+            val modes = listOf("rule" to "规则", "global" to "全局", "direct" to "直连")
             PrefSegRow(
                 title = "模式",
                 desc = "被代理流量的目的地走向",
@@ -485,7 +485,7 @@ fun ProxySettingsPage(viewModel: com.interstellar.proxy.ui.AppViewModel, onOpen:
                 onSelect = { i -> viewModel.setClashMode(modes[i].first) },
             )
         }
-        IosSectionFooter("规则模式按目的地规则(大陆/局域网/自定义)分流;代理模式全部经节点;直连保持 VPN 但不代理。")
+        IosSectionFooter("规则模式按目的地规则(大陆/局域网/自定义)分流;全局模式全部经节点;直连保持 VPN 但不代理。")
 
         Spacer(Modifier.height(22.dp))
 

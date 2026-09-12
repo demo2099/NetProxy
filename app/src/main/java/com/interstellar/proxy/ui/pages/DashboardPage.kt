@@ -280,7 +280,7 @@ fun DashboardPage(
 
             // ── 状态标签: 居中双胶囊, 点击进入分流设置 ──
             val routingLabel = when (routingMode) {
-                "global" -> "代理"
+                "global" -> "全局"
                 "direct" -> "直连"
                 else -> "规则"
             }
