@@ -111,19 +111,31 @@ class MihomoCore(
         Holder.instance = this
         com.interstellar.proxy.core.AppLog.log("mihomo", "进程已启动, 等待 API 就绪…")
 
-        // wait for the REST API to come up (config parse + geodata init)
+        // wait for the REST API to come up: raw TCP reachability first (auth /
+        // HTTP failures must not be mistaken for "not ready"), then probe the
+        // real endpoint once and surface its error for diagnosis
         var ready = false
+        var socketErr: String? = null
         repeat(READY_POLLS) {
-            if (api.version() != null) {
+            try {
+                java.net.Socket().use { s ->
+                    s.connect(java.net.InetSocketAddress("127.0.0.1", API_PORT), 600)
+                }
                 ready = true
                 return@repeat
+            } catch (e: Exception) {
+                socketErr = e.message
             }
             delay(READY_INTERVAL_MS)
         }
         if (!ready) {
-            Log.e(TAG, "mihomo API not ready after ${READY_POLLS * READY_INTERVAL_MS}ms")
-            AppLog.log("mihomo", "启动超时, 详见 libmihomo.so.log")
+            Log.e(TAG, "mihomo API socket unreachable: $socketErr")
+            AppLog.log("mihomo", "API 端口不可达: $socketErr")
             error("mihomo 启动超时(详见 ${configFile.parentFile}/libmihomo.so.log)")
+        }
+        runCatching { api.version() }.onFailure {
+            AppLog.log("mihomo", "API 已连通但 /version 失败: ${it.message}")
+            Log.w(TAG, "version probe failed", it)
         }
         applySelection(overrides)
     }
