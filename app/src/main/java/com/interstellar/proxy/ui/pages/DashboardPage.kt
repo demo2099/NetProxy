@@ -380,7 +380,7 @@ fun DashboardPage(
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         if (running) viewModel.stopProxy() else onStart()
                     },
-                    modifier = Modifier.weight(1.2f),
+                    modifier = Modifier.weight(1f),
                 )
                 GlassButton(
                     text = "切换节点",
@@ -632,7 +632,7 @@ private fun InstrumentCaption(text: String) {
     )
 }
 
-/** 遥测卡：玻璃卡 + 左上小标签。 */
+/** 遥测卡：玻璃卡 + 左上小标签，所有卡统一尺寸。 */
 @Composable
 private fun InstrumentCard(
     caption: String,
@@ -643,7 +643,7 @@ private fun InstrumentCard(
     val colors = LocalInterstellarColors.current
     GlassCard(
         modifier = modifier
-            .heightIn(min = 104.dp)
+            .height(InstrumentCardHeight)
             .fillMaxWidth(),
         onClick = onClick,
         contentPadding = 12.dp,
@@ -659,6 +659,9 @@ private fun InstrumentCard(
         content()
     }
 }
+
+/** All four dashboard instruments share one exact height so the grid stays uniform. */
+private val InstrumentCardHeight = 132.dp
 
 /** Hero：笑脸或轨道样式，按压缩放。 */
 @Composable
