@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -131,8 +132,9 @@ fun GlassCard(
 enum class GlassButtonStyle { Primary, Secondary, Danger }
 
 /**
- * Capsule action button: flat solid fill for primary/stop actions,
- * plain glass for secondary. Flat by design — no gradients, no glow.
+ * Capsule action button — flat but machined: solid fill with a darker
+ * hairline edge (like a physical key's milled rim), generous proportions
+ * and tracked type. No gradients, no glow.
  */
 @Composable
 fun GlassButton(
@@ -150,31 +152,45 @@ fun GlassButton(
         GlassButtonStyle.Danger -> Color.White
         GlassButtonStyle.Secondary -> colors.text
     }
+    val base = when (style) {
+        GlassButtonStyle.Primary -> colors.primary
+        GlassButtonStyle.Danger -> colors.danger
+        GlassButtonStyle.Secondary -> Color.Transparent
+    }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
         modifier = modifier
-            .graphicsLayer { alpha = if (enabled) 1f else 0.5f }
+            .graphicsLayer { alpha = if (enabled) 1f else 0.45f }
             .clip(RoundedCornerShape(50))
             .then(
                 when (style) {
-                    GlassButtonStyle.Primary -> Modifier.background(colors.primary)
-                    GlassButtonStyle.Danger -> Modifier.background(colors.danger)
                     GlassButtonStyle.Secondary ->
                         Modifier.glassSurface(50.dp, light, colors.panelTop, colors.panelBottom, colors.border)
+
+                    else -> Modifier
+                        .background(base)
+                        // milled rim: one step darker than the fill — defines the
+                        // edge without any gradient or shadow
+                        .border(
+                            1.dp,
+                            lerp(base, Color.Black, if (light) 0.22f else 0.30f),
+                            RoundedCornerShape(50),
+                        )
                 },
             )
-            .defaultMinSize(minWidth = 96.dp, minHeight = 46.dp)
+            .defaultMinSize(minWidth = 104.dp, minHeight = 48.dp)
             .pressableClick { if (enabled) onClick() }
-            .padding(horizontal = 20.dp, vertical = 12.dp),
+            .padding(horizontal = 24.dp, vertical = 13.dp),
     ) {
         leading?.invoke()
-        if (leading != null) Spacer(Modifier.width(6.dp))
+        if (leading != null) Spacer(Modifier.width(7.dp))
         Text(
             text,
             color = fg,
             fontSize = 15.sp,
             fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.8.sp,
             maxLines = 1,
         )
     }
