@@ -87,6 +87,9 @@ object MihomoConfigBuilder {
         put("fake-ip-range", "198.18.0.1/16")
         put("fake-ip-filter", listOf("+.lan", "+.local", "dns.msftncsi.com", "www.msftncsi.com"))
         put("default-nameserver", listOf("223.5.5.5"))
+        // node server domains MUST resolve directly (mihomo's escape hatch for
+        // the "resolve-via-proxy to reach the proxy" loop)
+        put("proxy-server-nameserver", listOf("223.5.5.5", "119.29.29.29"))
         // remote resolution rides the proxy (mirror of sing-box dns-remote
         // detouring the proxy group); DIRECT mode resolves everything local
         put(

@@ -53,6 +53,8 @@ class MihomoConfigBuilderTest {
         check("rules" in doc) { "rules missing" }
         check("tun" in doc) { "tun missing" }
         check("dns" in doc) { "dns missing" }
+        val dns = doc["dns"]!!.jsonObject
+        check("proxy-server-nameserver" in dns) { "node-server direct dns missing" }
         check(doc["mixed-port"]!!.jsonPrimitive.content == "2080") { "mixed-port" }
         check(doc["external-controller"]!!.jsonPrimitive.content == "127.0.0.1:9090") { "clash api" }
 
