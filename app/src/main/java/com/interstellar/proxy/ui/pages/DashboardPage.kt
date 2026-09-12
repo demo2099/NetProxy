@@ -301,7 +301,6 @@ fun DashboardPage(
 
             Spacer(Modifier.height(8.dp))
 
-            val coreContext = androidx.compose.ui.platform.LocalContext.current
             val coreOrder = listOf(
                 com.interstellar.proxy.core.CoreKind.SINGBOX,
                 com.interstellar.proxy.core.CoreKind.MIHOMO,
@@ -324,12 +323,6 @@ fun DashboardPage(
                     selected = coreOrder.indexOf(coreKind).coerceAtLeast(0),
                     onSelect = { i ->
                         val picked = coreOrder[i]
-                        if (picked == com.interstellar.proxy.core.CoreKind.XRAY) {
-                            android.widget.Toast.makeText(
-                                coreContext, "Xray 内核即将上线", android.widget.Toast.LENGTH_SHORT,
-                            ).show()
-                            return@SegmentedControl
-                        }
                         if (!busy && status != Status.Starting) {
                             viewModel.switchCore(picked)
                         }
