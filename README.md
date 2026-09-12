@@ -123,6 +123,11 @@ app/src/main/java/com/interstellar/proxy/
    - 签名：根目录 `signing.properties`（gitignored），缺失时 release 自动回退 debug 签名，fresh checkout 也能构建。
    - 网络受限环境可用 `mirrors.cloud.tencent.com/gradle` 发行镜像（已在 wrapper 配置）。
 
+3. **CI**（`.github/workflows/release-apk.yml`）：推送 `v*` tag 自动编译 release APK 并发布到 GitHub Release。
+   - 版本统一在根目录 `version.properties` 维护（versionCode/versionName，设置页"版本"行也读它）；发版改该文件后打 `v<versionName>` tag，CI 会校验两者一致。
+   - libbox.aar 在 CI 上从 sing-box 源码重建（按 `SINGBOX_TAG` 缓存）。
+   - 正式签名需配置 repo secrets（`INTERSTELLAR_KEYSTORE_B64` = base64(jks)、`INTERSTELLAR_STORE_PASSWORD`、`INTERSTELLAR_KEY_ALIAS`、`INTERSTELLAR_KEY_PASSWORD`），未配置时回退 debug 签名。
+
 ## 技术要点
 
 - 内核控制全部走 libbox `CommandClient`（本地 abstract socket），节点热切换/测速/日志/状态无需 HTTP API

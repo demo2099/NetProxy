@@ -33,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.interstellar.proxy.BuildConfig
 import com.interstellar.proxy.data.CustomRulesStore
 import com.interstellar.proxy.data.DnsOverridesStore
 import com.interstellar.proxy.data.Settings
@@ -281,7 +282,7 @@ fun SettingsPage(onOpen: (SettingsSubPage) -> Unit, onProxyChanged: () -> Unit =
                     }
                 },
             )
-            PrefNavRow(title = "版本", value = "0.3.0")
+            PrefNavRow(title = "版本", value = BuildConfig.VERSION_NAME)
             PrefNavRow(title = "内核", value = "sing-box 1.14.0")
         }
 

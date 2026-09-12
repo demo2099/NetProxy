@@ -15,6 +15,11 @@ val signingProps = Properties().apply {
     if (f.exists()) f.inputStream().use { load(it) }
 }
 
+// version.properties — 全局唯一的版本定义处 (设置页与 CI 的 tag 校验都依赖它)
+val versionProps = Properties().apply {
+    rootProject.file("version.properties").inputStream().use { load(it) }
+}
+
 android {
     namespace = "com.interstellar.proxy"
     compileSdk = 36
@@ -23,8 +28,8 @@ android {
         applicationId = "com.interstellar.proxy"
         minSdk = 24
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = versionProps.getProperty("versionCode").toInt()
+        versionName = versionProps.getProperty("versionName")
     }
 
     signingConfigs {
@@ -80,6 +85,8 @@ android {
 
     buildFeatures {
         aidl = true
+        // 设置页"版本"行读取 BuildConfig.VERSION_NAME
+        buildConfig = true
     }
 }
 
