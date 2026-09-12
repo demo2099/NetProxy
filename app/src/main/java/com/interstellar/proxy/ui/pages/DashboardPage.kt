@@ -78,6 +78,7 @@ import com.interstellar.proxy.core.CoreGroup
 
 private const val CORE_VERSION = "sing-box 1.14.0"
 private const val MIHOMO_VERSION = "mihomo v1.19.30"
+private const val XRAY_VERSION_CARD = "Xray v26.3.27"
 
 @Composable
 fun DashboardPage(
@@ -350,6 +351,7 @@ fun DashboardPage(
                     secondary = {
                         val coreLabel = when (coreKind) {
                             com.interstellar.proxy.core.CoreKind.MIHOMO -> MIHOMO_VERSION
+                            com.interstellar.proxy.core.CoreKind.XRAY -> XRAY_VERSION_CARD
                             else -> CORE_VERSION
                         }
                         Text(
