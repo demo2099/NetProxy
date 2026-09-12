@@ -273,9 +273,9 @@ fun DashboardPage(
                 )
             }
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
 
-            // ── 快速控制：路由模式（规则 / 全局 / 直连）
+            // ── 快速控制：路由模式（规则 / 全局 / 直连）+ 代理内核
             val routingIndex = when (routingMode) {
                 "global" -> 1
                 "direct" -> 2
@@ -288,6 +288,35 @@ fun DashboardPage(
                     selected = routingIndex,
                     onSelect = { i ->
                         viewModel.setClashMode(listOf("rule", "global", "direct")[i])
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            val coreContext = androidx.compose.ui.platform.LocalContext.current
+            val coreOrder = listOf(
+                com.interstellar.proxy.core.CoreKind.SINGBOX,
+                com.interstellar.proxy.core.CoreKind.MIHOMO,
+                com.interstellar.proxy.core.CoreKind.XRAY,
+            )
+            Column(modifier = Modifier.fillMaxWidth()) {
+                InstrumentCaption("内核")
+                SegmentedControl(
+                    items = coreOrder.map { it.displayName },
+                    selected = coreOrder.indexOf(Settings.coreKind).coerceAtLeast(0),
+                    onSelect = { i ->
+                        val picked = coreOrder[i]
+                        if (picked == com.interstellar.proxy.core.CoreKind.XRAY) {
+                            android.widget.Toast.makeText(
+                                coreContext, "Xray 内核即将上线", android.widget.Toast.LENGTH_SHORT,
+                            ).show()
+                            return@SegmentedControl
+                        }
+                        if (!busy && status != Status.Starting) {
+                            viewModel.switchCore(picked)
+                        }
                     },
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -359,7 +388,7 @@ fun DashboardPage(
                             maxLines = 1,
                         )
                     }
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(4.dp))
                     Text(
                         "$CORE_VERSION · $activeConnectionCount 连接",
                         color = colors.textTertiary,
@@ -379,7 +408,7 @@ fun DashboardPage(
                         upColor = colors.danger,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(42.dp),
+                            .height(34.dp),
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
@@ -484,7 +513,7 @@ fun DashboardPage(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(4.dp))
                     if (totalBytes > 0) {
                         val fraction = (used.toFloat() / totalBytes).coerceIn(0f, 1f)
                         val barColor = when {
@@ -591,7 +620,7 @@ private fun InstrumentCard(
             .height(InstrumentCardHeight)
             .fillMaxWidth(),
         onClick = onClick,
-        contentPadding = 12.dp,
+        contentPadding = 10.dp,
     ) {
         Text(
             caption,
@@ -600,13 +629,13 @@ private fun InstrumentCard(
             fontWeight = FontWeight.Medium,
             letterSpacing = 1.sp,
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(6.dp))
         content()
     }
 }
 
 /** All four dashboard instruments share one exact height so the grid stays uniform. */
-private val InstrumentCardHeight = 132.dp
+private val InstrumentCardHeight = 114.dp
 
 /** Hero：笑脸或轨道样式，按压缩放。 */
 @Composable

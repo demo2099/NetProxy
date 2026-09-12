@@ -226,7 +226,6 @@ fun AppRoot(
                                 SettingsSubPage.Settings -> SettingsPage(
                                     onOpen = { sub -> push(sub) },
                                     onProxyChanged = { appViewModel.refreshProxyConfig() },
-                                    onCoreChanged = { kind -> appViewModel.switchCore(kind) },
                                 )
                                 SettingsSubPage.PerApp -> PerAppProxyPage(onBack = { pop() })
                                 SettingsSubPage.Connections -> ConnectionsPage(connectionsViewModel, appViewModel)
@@ -279,7 +278,6 @@ fun AppRoot(
                                     com.interstellar.proxy.ui.pages.MainTab.Settings -> SettingsPage(
                                         onOpen = { sub -> push(sub) },
                                         onProxyChanged = { appViewModel.refreshProxyConfig() },
-                                        onCoreChanged = { kind -> appViewModel.switchCore(kind) },
                                     )
                                 }
                             }

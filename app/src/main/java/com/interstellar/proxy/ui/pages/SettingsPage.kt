@@ -78,11 +78,7 @@ private fun isIgnoringBatteryOptimizations(context: android.content.Context): Bo
  * squares, no separators) and right-aligned controls.
  */
 @Composable
-fun SettingsPage(
-    onOpen: (SettingsSubPage) -> Unit,
-    onProxyChanged: () -> Unit = {},
-    onCoreChanged: (com.interstellar.proxy.core.CoreKind) -> Unit = {},
-) {
+fun SettingsPage(onOpen: (SettingsSubPage) -> Unit, onProxyChanged: () -> Unit = {}) {
     val colors = LocalInterstellarColors.current
     val context = androidx.compose.ui.platform.LocalContext.current
     var themeMode by remember { mutableStateOf(Settings.themeMode) }
@@ -134,44 +130,6 @@ fun SettingsPage(
                 desc = "马卡龙色板,整套界面随之换肤",
             )
         }
-
-        Spacer(Modifier.height(22.dp))
-
-        // ---- 内核 ----
-        PrefSectionLabel("内核")
-        GlassCard(modifier = Modifier.fillMaxWidth(), contentPadding = 6.dp) {
-            val coreOrder = listOf(
-                com.interstellar.proxy.core.CoreKind.SINGBOX,
-                com.interstellar.proxy.core.CoreKind.MIHOMO,
-                com.interstellar.proxy.core.CoreKind.XRAY,
-            )
-            PrefSegRow(
-                title = "代理内核",
-                desc = "订阅、规则与 DNS 配置随内核切换",
-                items = coreOrder.map { it.displayName },
-                selected = coreOrder.indexOf(Settings.coreKind).coerceAtLeast(0),
-                layout = SegLayout.Below,
-                onSelect = { index ->
-                    val picked = coreOrder[index]
-                    when (picked) {
-                        com.interstellar.proxy.core.CoreKind.SINGBOX,
-                        com.interstellar.proxy.core.CoreKind.MIHOMO,
-                        -> {
-                            if (Settings.coreKind != picked) {
-                                onCoreChanged(picked)
-                            }
-                        }
-
-                        else -> android.widget.Toast.makeText(
-                            context,
-                            "${picked.displayName} 内核即将上线",
-                            android.widget.Toast.LENGTH_SHORT,
-                        ).show()
-                    }
-                },
-            )
-        }
-        IosSectionFooter("切换内核会重启代理服务;mihomo 以独立子进程运行,与 sing-box 一键互切。")
 
         Spacer(Modifier.height(22.dp))
 
