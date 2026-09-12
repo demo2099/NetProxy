@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -131,8 +132,36 @@ fun GlassCard(
 enum class GlassButtonStyle { Primary, Secondary, Danger }
 
 /**
- * Capsule action button (satelite's pill buttons): accent fill for the
- * primary action, glass for secondary, fixed orange for stop.
+ * Filled capsule material for the primary/stop actions: a diagonal
+ * light-to-deep gradient over the base color, an upper-left sheen (the
+ * same "lit" language as the glass cards), a bright hairline and a
+ * colored glow beneath — flat solid fills read cheap, this reads glass.
+ */
+private fun Modifier.gradientFilledSurface(base: Color): Modifier = drawBehind {
+    val corner = CornerRadius(size.height / 2f)
+    val top = lerp(base, Color.White, 0.22f)
+    val bottom = lerp(base, Color.Black, 0.20f)
+    drawRoundRect(
+        brush = Brush.linearGradient(
+            listOf(top, bottom),
+            start = Offset.Zero,
+            end = Offset(size.width * 0.6f, size.height),
+        ),
+        cornerRadius = corner,
+    )
+    drawRoundRect(
+        brush = Brush.linearGradient(
+            listOf(Color.White.copy(alpha = 0.30f), Color.Transparent),
+            start = Offset.Zero,
+            end = Offset(size.width * 0.5f, size.height * 0.62f),
+        ),
+        cornerRadius = corner,
+    )
+}.border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(50))
+
+/**
+ * Capsule action button (satelite's pill buttons): gradient glass fill for
+ * the primary action, plain glass for secondary, warm gradient for stop.
  */
 @Composable
 fun GlassButton(
@@ -145,10 +174,16 @@ fun GlassButton(
 ) {
     val colors = LocalInterstellarColors.current
     val light = 0.2126f * colors.bg.red + 0.7152f * colors.bg.green + 0.0722f * colors.bg.blue > 0.5f
-    val (bg, fg) = when (style) {
-        GlassButtonStyle.Primary -> colors.primary to colors.onPrimary
-        GlassButtonStyle.Danger -> colors.danger to Color.White
-        GlassButtonStyle.Secondary -> colors.panelTop to colors.text
+    val filled = style != GlassButtonStyle.Secondary
+    val fg = when (style) {
+        GlassButtonStyle.Primary -> colors.onPrimary
+        GlassButtonStyle.Danger -> Color.White
+        GlassButtonStyle.Secondary -> colors.text
+    }
+    val glow = when (style) {
+        GlassButtonStyle.Primary -> colors.primaryGlow
+        GlassButtonStyle.Danger -> colors.danger.copy(alpha = 0.32f)
+        GlassButtonStyle.Secondary -> Color.Transparent
     }
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -156,12 +191,12 @@ fun GlassButton(
         modifier = modifier
             .graphicsLayer { alpha = if (enabled) 1f else 0.5f }
             .then(
-                if (style == GlassButtonStyle.Primary) {
+                if (filled) {
                     Modifier.shadow(
-                        10.dp,
+                        14.dp,
                         RoundedCornerShape(50),
-                        ambientColor = colors.primaryGlow,
-                        spotColor = colors.primaryGlow,
+                        ambientColor = glow,
+                        spotColor = glow,
                     )
                 } else {
                     Modifier
@@ -169,10 +204,15 @@ fun GlassButton(
             )
             .clip(RoundedCornerShape(50))
             .then(
-                if (style == GlassButtonStyle.Secondary) {
-                    Modifier.glassSurface(50.dp, light, colors.panelTop, colors.panelBottom, colors.border)
-                } else {
-                    Modifier.background(bg)
+                when {
+                    filled -> Modifier.gradientFilledSurface(
+                        when (style) {
+                            GlassButtonStyle.Danger -> colors.danger
+                            else -> colors.primary
+                        },
+                    )
+
+                    else -> Modifier.glassSurface(50.dp, light, colors.panelTop, colors.panelBottom, colors.border)
                 },
             )
             .defaultMinSize(minWidth = 96.dp, minHeight = 46.dp)
@@ -186,6 +226,7 @@ fun GlassButton(
             color = fg,
             fontSize = 15.sp,
             fontWeight = FontWeight.SemiBold,
+            letterSpacing = 1.sp,
             maxLines = 1,
         )
     }
