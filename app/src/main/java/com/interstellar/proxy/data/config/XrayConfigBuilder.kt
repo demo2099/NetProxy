@@ -31,7 +31,7 @@ object XrayConfigBuilder {
     /** Node types Xray can express; others are skipped with [skippedReport]. */
     private val SUPPORTED = setOf(
         NodeType.SHADOWSOCKS, NodeType.VMESS, NodeType.VLESS, NodeType.TROJAN,
-        NodeType.SOCKS, NodeType.HTTP, NodeType.WIREGUARD,
+        NodeType.SOCKS, NodeType.HTTP, NodeType.WIREGUARD, NodeType.HYSTERIA2,
     )
 
     /** Human-readable summary of the nodes dropped by the Xray protocol matrix. */
@@ -42,12 +42,12 @@ object XrayConfigBuilder {
         val usable = nodes.filter { it.type in SUPPORTED && it.shadowTls == null && it.network != "quic" }
         val unsupported = nodes.size - usable.size
         skippedReport = if (unsupported > 0) {
-            "已跳过 $unsupported 个 Xray 不支持的节点(hysteria2/tuic/anytls/ssh/shadow-tls/quic)"
+            "已跳过 $unsupported 个 Xray 不支持的节点(tuic/anytls/ssh/shadow-tls/quic)"
         } else {
             null
         }
         if (usable.isEmpty()) {
-            throw IllegalStateException("订阅中没有 Xray 支持的节点 (支持 ss/vmess/vless/trojan/socks/http/wireguard)")
+            throw IllegalStateException("订阅中没有 Xray 支持的节点 (支持 ss/vmess/vless/trojan/socks/http/wireguard/hysteria2)")
         }
 
         val tags = ConfigBuilder.tagsFor(usable)
@@ -345,6 +345,11 @@ object XrayConfigBuilder {
                 JSONObject().put("servers", JSONArray().put(server))
             }
 
+            NodeType.HYSTERIA2 -> JSONObject()
+                .put("version", 2)
+                .put("address", node.server)
+                .put("port", node.port)
+
             NodeType.WIREGUARD -> {
                 val wg = node.wireguard ?: return null
                 JSONObject()
@@ -377,6 +382,7 @@ object XrayConfigBuilder {
     private fun protocolOf(node: ProxyNode) = when (node.type) {
         NodeType.SHADOWSOCKS -> "shadowsocks"
         NodeType.SOCKS -> "socks"
+        NodeType.HYSTERIA2 -> "hysteria" // Xray's name; version 2 = hysteria2
         else -> node.type.wire
     }
 
@@ -393,6 +399,44 @@ object XrayConfigBuilder {
 
     private fun streamSettingsFor(node: ProxyNode): JSONObject? {
         val stream = JSONObject()
+        if (node.type == NodeType.HYSTERIA2) {
+            // QUIC rides the "hysteria" transport; auth/obfs/bandwidth are
+            // transport-level (hysteriaSettings + finalmask), TLS is inherent
+            stream.put("network", "hysteria")
+                .put(
+                    "hysteriaSettings",
+                    JSONObject().put("version", 2).put("auth", node.password ?: ""),
+                )
+                .put("security", "tls")
+                .put(
+                    "tlsSettings",
+                    JSONObject()
+                        .put("serverName", node.sni ?: node.server)
+                        .put("alpn", JSONArray(listOf("h3"))),
+                )
+            val finalMask = JSONObject()
+            if (!node.hy2ObfsPassword.isNullOrBlank()) {
+                finalMask.put(
+                    "udp",
+                    JSONArray().put(
+                        JSONObject()
+                            .put("type", "salamander")
+                            .put("settings", JSONObject().put("password", node.hy2ObfsPassword)),
+                    ),
+                )
+            }
+            if (node.upMbps != null || node.downMbps != null) {
+                finalMask.put(
+                    "quicParams",
+                    JSONObject()
+                        .apply { node.upMbps?.let { put("brutalUp", "$it Mbps") } }
+                        .apply { node.downMbps?.let { put("brutalDown", "$it Mbps") } }
+                        .put("congestion", "brutal"),
+                )
+            }
+            if (finalMask.length() > 0) stream.put("finalmask", finalMask)
+            return stream
+        }
         when (node.network) {
             "ws" -> stream.put("network", "ws").put(
                 "wsSettings",
