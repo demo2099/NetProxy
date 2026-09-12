@@ -300,6 +300,7 @@ fun DashboardPage(
                         viewModel.setClashMode(listOf("rule", "global", "direct")[i])
                     },
                     modifier = Modifier.weight(1f),
+                    controlHeight = 40.dp,
                 )
             }
 
@@ -339,6 +340,7 @@ fun DashboardPage(
                         }
                     },
                     modifier = Modifier.weight(1f),
+                    controlHeight = 40.dp,
                 )
             }
 

@@ -81,12 +81,13 @@ fun SegmentedControl(
     selected: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    controlHeight: Dp = 36.dp,
 ) {
     val colors = LocalInterstellarColors.current
 
     androidx.compose.foundation.layout.BoxWithConstraints(
         modifier = modifier
-            .height(36.dp)
+            .height(controlHeight)
             .clip(RoundedCornerShape(50))
             .background(colors.bgDeep)
             .padding(3.dp),
