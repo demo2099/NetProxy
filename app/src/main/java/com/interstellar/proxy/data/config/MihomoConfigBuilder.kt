@@ -57,6 +57,9 @@ object MihomoConfigBuilder {
                     put("stack", "mixed")
                     put("device", "interstellar")
                     put("file-descriptor", tunFd ?: 0)
+                    // NOTE: mihomo's parseTun derives the interface address from
+                    // fake-ip-range (base/30) and IGNORES inet4-address — the
+                    // VPN builder must use 198.18.0.1/30 + DNS 198.18.0.2
                     put("mtu", 9000)
                     put("auto-route", false)
                     put("auto-redirect", false)

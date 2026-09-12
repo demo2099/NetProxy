@@ -212,20 +212,23 @@ class VPNService :
         if (spec.allowBypass) {
             builder.allowBypass()
         }
-        builder.addAddress("172.19.0.1", 30)
-        builder.addAddress("fdfe:dcba:9876::1", 126)
-        builder.addDnsServer("172.19.0.1")
+        // mihomo parseTun hardcodes the interface address to fake-ip-range's
+        // base /30 (inet4-address is ignored) and serves DNS on address.Next()
+        builder.addAddress("198.18.0.1", 30)
+        builder.addDnsServer("198.18.0.2")
 
         val excluded = resolveExclusions(spec.exclusions)
         val hasModernExclusions = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
         if (hasModernExclusions) {
             builder.addRoute("0.0.0.0", 0)
-            builder.addRoute("::", 0)
+            // v4-only sidecar VPN (no v6 address on the interface)
             for (prefix in excluded) {
-                runCatching { builder.excludeRoute(prefix) }
+                if (prefix.address.address.size == 4) {
+                    runCatching { builder.excludeRoute(prefix) }
+                }
             }
         } else {
-            // pre-13: split the IPv4/IPv6 space around the exclusions instead
+            // pre-13: split the IPv4 space around the exclusions instead
             for (prefix in complementRoutes(excluded)) {
                 runCatching { builder.addRoute(prefix) }
             }
