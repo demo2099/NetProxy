@@ -262,7 +262,8 @@ fun AppRoot(
                         androidx.compose.runtime.LaunchedEffect(nav.tab) {
                             val target = nav.tab.ordinal
                             if (!pagerState.isScrollInProgress && pagerState.settledPage != target) {
-                                pagerState.animateScrollToPage(target)
+                                // tab-like direct switch, no carousel ride through neighbors
+                                pagerState.scrollToPage(target)
                             }
                         }
                         Column(modifier = Modifier.fillMaxSize()) {
@@ -300,7 +301,8 @@ fun AppRoot(
                                 ),
                                 selected = pagerState.currentPage,
                                 onSelect = { i ->
-                                    scope.launch { pagerState.animateScrollToPage(i) }
+                                    // direct switch, iOS TabBar style — only swipes animate
+                                    scope.launch { pagerState.scrollToPage(i) }
                                 },
                             )
                         }
