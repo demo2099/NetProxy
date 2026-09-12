@@ -406,7 +406,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun connect() {
-        commandClient.connect()
+        // libbox command socket only exists for the sing-box engine
+        if (Settings.coreKind != CoreKind.MIHOMO) commandClient.connect()
         startMihomoBridge()
         registerStoppedReceiver()
         // poll-reconnect: the box may start/stop at any time, and a failed
@@ -416,7 +417,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             while (isActive) {
                 delay(2000)
                 if (_status.value == Status.Starting || _status.value == Status.Stopped) {
-                    commandClient.connect()
+                    if (Settings.coreKind != CoreKind.MIHOMO) commandClient.connect()
                 }
             }
         }
@@ -519,6 +520,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
      * Do not flip Started → Starting — that is the "连接中" hang.
      */
     private fun applySocketDrop() {
+        // connection errors from the (sing-box only) command client must not
+        // tear down a healthy sidecar engine
+        if (Settings.coreKind == CoreKind.MIHOMO) return
         when (_status.value) {
             Status.Stopping -> markStopped()
             Status.Started -> armStartingWatchdog(SOCKET_DROP_TIMEOUT_MS)

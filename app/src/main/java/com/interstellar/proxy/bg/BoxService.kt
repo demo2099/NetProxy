@@ -236,6 +236,7 @@ class BoxService(private val service: Service, private val platformInterface: Pl
     private fun stopService() {
         val current = status.value
         if (current == Status.Stopped || current == Status.Stopping) return
+        com.interstellar.proxy.core.AppLog.log("service", "stopService() ← ${Throwable().stackTrace.take(4).joinToString(" ")}")
         status.value = Status.Stopping
         notifyStopped()
         if (receiverRegistered) {

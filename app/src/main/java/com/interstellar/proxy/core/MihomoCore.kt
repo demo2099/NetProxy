@@ -101,15 +101,16 @@ class MihomoCore(
 
         val process = SidecarProcess(context, "libmihomo.so", listOf("-d", workDir.absolutePath, "-f", configFile.absolutePath), workDir) { code ->
             Log.e(TAG, "mihomo exited unexpectedly: $code")
-            AppLog.log("mihomo", "进程异常退出 code=$code")
+            AppLog.log("mihomo", "进程退出 code=$code ${Throwable().stackTrace.take(3).joinToString(" ")}")
             activeTunFd = null
             Holder.instance = null
             host.onCoreRequestStop()
         }
+        val spawnAtMs = System.currentTimeMillis()
         process.start()
         sidecar = process
         Holder.instance = this
-        com.interstellar.proxy.core.AppLog.log("mihomo", "进程已启动, 等待 API 就绪…")
+        AppLog.log("mihomo", "进程已启动, 等待 API 就绪…")
 
         // wait for the REST API to come up: raw TCP reachability first (auth /
         // HTTP failures must not be mistaken for "not ready"), then probe the
@@ -133,8 +134,11 @@ class MihomoCore(
             AppLog.log("mihomo", "API 端口不可达: $socketErr")
             error("mihomo 启动超时(详见 ${configFile.parentFile}/libmihomo.so.log)")
         }
-        runCatching { api.version() }.onFailure {
-            AppLog.log("mihomo", "API 已连通但 /version 失败: ${it.message}")
+        AppLog.log("mihomo", "API 就绪 (${"%.1f".format((System.currentTimeMillis() - spawnAtMs) / 1000.0)}s)")
+        runCatching { api.versionOrThrow() }.onSuccess {
+            AppLog.log("mihomo", "version 探测成功: $it")
+        }.onFailure {
+            AppLog.log("mihomo", "version 探测失败: ${it.message}")
             Log.w(TAG, "version probe failed", it)
         }
         applySelection(overrides)

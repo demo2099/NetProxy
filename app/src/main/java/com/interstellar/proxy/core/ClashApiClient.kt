@@ -26,6 +26,9 @@ class ClashApiClient(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val client = OkHttpClient.Builder()
+        // the system HTTP proxy (or a leftover VPN one) must never intercept
+        // the loopback control API — raw TCP then works but HTTP "fails"
+        .proxy(java.net.Proxy.NO_PROXY)
         .connectTimeout(2, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
         .build()
@@ -38,6 +41,12 @@ class ClashApiClient(
             val body = call(Request.Builder().url("$base/version").header("Authorization", auth).build())
             json.parseToJsonElement(body).jsonObject["version"]?.jsonPrimitive?.content
         }.getOrNull()
+    }
+
+    /** Diagnostic variant — surfaces the real transport/HTTP error. */
+    suspend fun versionOrThrow(): String = withContext(Dispatchers.IO) {
+        val body = call(Request.Builder().url("$base/version").header("Authorization", auth).build())
+        json.parseToJsonElement(body).jsonObject["version"]?.jsonPrimitive?.content ?: "unknown"
     }
 
     /** Full proxy map: name → { type, now, all, history } (GET /proxies). */
