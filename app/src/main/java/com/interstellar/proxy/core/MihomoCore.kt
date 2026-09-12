@@ -101,7 +101,7 @@ class MihomoCore(
 
         val process = SidecarProcess(context, "libmihomo.so", listOf("-d", workDir.absolutePath, "-f", configFile.absolutePath), workDir) { code ->
             Log.e(TAG, "mihomo exited unexpectedly: $code")
-            AppLog.log("mihomo", "进程退出 code=$code ${Throwable().stackTrace.take(3).joinToString(" ")}")
+            AppLog.log("mihomo", "进程异常退出 code=$code")
             activeTunFd = null
             Holder.instance = null
             host.onCoreRequestStop()
@@ -135,10 +135,8 @@ class MihomoCore(
             error("mihomo 启动超时(详见 ${configFile.parentFile}/libmihomo.so.log)")
         }
         AppLog.log("mihomo", "API 就绪 (${"%.1f".format((System.currentTimeMillis() - spawnAtMs) / 1000.0)}s)")
-        runCatching { api.versionOrThrow() }.onSuccess {
-            AppLog.log("mihomo", "version 探测成功: $it")
-        }.onFailure {
-            AppLog.log("mihomo", "version 探测失败: ${it.message}")
+        runCatching { api.versionOrThrow() }.onFailure {
+            AppLog.log("mihomo", "API 探测失败: ${it.message}")
             Log.w(TAG, "version probe failed", it)
         }
         applySelection(overrides)

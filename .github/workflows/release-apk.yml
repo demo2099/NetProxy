@@ -53,13 +53,15 @@ jobs:
       - name: Ensure app/libs exists
         run: mkdir -p app/libs
 
-      - name: Cache sidecar cores (mihomo)
+      - name: Cache sidecar cores (mihomo cmfa + hev)
         uses: actions/cache@v4
         with:
           path: app/src/main/jniLibs
-          key: sidecar-mihomo-v1.19.30
+          key: sidecar-v2-mihomo-v1.19.30-cmfa-hev-2.17.1
 
-      - name: Fetch sidecar cores
+      # mihomo 官方 android 二进制的 TUN 会读 packages.xml(root-only) fatal,
+      # 必须 cmfa 标签自编译; hev 为 TUN→socks5 JNI 桥(ndk-build)
+      - name: Build sidecar cores
         run: python tools/fetch_cores.py
 
       # sing-box v1.14 起移除了 `make lib_android`, 改用 cmd/internal/build_libbox。
