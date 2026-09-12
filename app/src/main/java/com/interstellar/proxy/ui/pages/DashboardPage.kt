@@ -341,35 +341,6 @@ fun DashboardPage(
 
             Spacer(Modifier.height(12.dp))
 
-            // ── 主操作：连接/断开 + 切换节点
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                GlassButton(
-                    text = when {
-                        running -> "断开连接"
-                        status == Status.Starting -> "启动中…"
-                        else -> "启动代理"
-                    },
-                    style = if (running) GlassButtonStyle.Danger else GlassButtonStyle.Primary,
-                    enabled = !busy && status != Status.Starting,
-                    onClick = {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        if (running) viewModel.stopProxy() else onStart()
-                    },
-                    modifier = Modifier.weight(1f),
-                )
-                GlassButton(
-                    text = "切换节点",
-                    style = GlassButtonStyle.Secondary,
-                    onClick = { onOpenTab(MainTab.Nodes) },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-
-            Spacer(Modifier.height(16.dp))
-
             // ── 仪表网格：核心 / 流量曲线 / 网络探测 / 订阅
             val down = Libbox.formatBytes(speed.downlinkPerSecond)
             val up = Libbox.formatBytes(speed.uplinkPerSecond)
@@ -384,16 +355,12 @@ fun DashboardPage(
                     onClick = { onOpenSubPage(SettingsSubPage.Logs) },
                     modifier = Modifier.weight(1f),
                     secondary = {
-                        val connectionCount = when (coreKind) {
-                            com.interstellar.proxy.core.CoreKind.MIHOMO -> mihomoConnectionCount
-                            else -> activeConnectionCount
-                        }
                         val coreLabel = when (coreKind) {
                             com.interstellar.proxy.core.CoreKind.MIHOMO -> MIHOMO_VERSION
                             else -> CORE_VERSION
                         }
                         Text(
-                            "$coreLabel · $connectionCount 连接",
+                            coreLabel,
                             color = colors.textTertiary,
                             fontSize = 11.sp,
                             maxLines = 1,
@@ -592,6 +559,38 @@ fun DashboardPage(
                     )
                 }
             }
+
+            Spacer(Modifier.height(14.dp))
+
+            // ── 主操作：连接/断开 + 切换节点
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                GlassButton(
+                    text = when {
+                        running -> "断开连接"
+                        status == Status.Starting -> "启动中…"
+                        else -> "启动代理"
+                    },
+                    style = if (running) GlassButtonStyle.Danger else GlassButtonStyle.Primary,
+                    enabled = !busy && status != Status.Starting,
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        if (running) viewModel.stopProxy() else onStart()
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+                GlassButton(
+                    text = "切换节点",
+                    style = GlassButtonStyle.Secondary,
+                    onClick = { onOpenTab(MainTab.Nodes) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+
+            Spacer(Modifier.height(4.dp))
 
             if (message != null) {
                 Spacer(Modifier.height(12.dp))
