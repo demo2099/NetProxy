@@ -3,6 +3,7 @@ package com.interstellar.proxy.ui.pages
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -364,7 +365,24 @@ fun NodesPage(viewModel: AppViewModel) {
             // auto mode active → show the node the urltest group is on right now
             source = autoNow,
         )
-        val displayed = listOf(autoCard) + sorted
+        // smart-switch placeholder — dimmed, tap only explains (not yet built)
+        val smartCard = NodeEntry(
+            tag = ConfigBuilder.SMART_TAG,
+            type = "smart",
+            delay = 0,
+            title = "智能",
+        )
+        val displayed = listOf(autoCard, smartCard) + sorted
+        val nodeCtx = androidx.compose.ui.platform.LocalContext.current
+        val onNodeTap: (NodeEntry) -> Unit = { item ->
+            if (item.tag == ConfigBuilder.SMART_TAG) {
+                android.widget.Toast.makeText(
+                    nodeCtx, "智能切换即将上线", android.widget.Toast.LENGTH_SHORT,
+                ).show()
+            } else {
+                viewModel.selectNode(ConfigBuilder.GROUP_TAG, item.tag)
+            }
+        }
 
         if (gridView) {
             BoxWithConstraints(
@@ -382,13 +400,17 @@ fun NodesPage(viewModel: AppViewModel) {
                     modifier = Modifier.fillMaxSize(),
                 ) {
                 items(displayed, key = { it.tag }) { item ->
-                    NodeGridCell(
-                        item = item,
-                        delay = delays[item.tag] ?: item.delay,
-                        selected = item.tag == selectedTag,
-                        onClick = { viewModel.selectNode(ConfigBuilder.GROUP_TAG, item.tag) },
-                        onLongPress = { if (item.tag != ConfigBuilder.AUTO_TAG) detailItem = item },
-                    )
+                    androidx.compose.foundation.layout.Box(
+                        modifier = Modifier.alpha(if (item.tag == ConfigBuilder.SMART_TAG) 0.5f else 1f),
+                    ) {
+                        NodeGridCell(
+                            item = item,
+                            delay = delays[item.tag] ?: item.delay,
+                            selected = item.tag == selectedTag,
+                            onClick = { onNodeTap(item) },
+                            onLongPress = { if (item.tag != ConfigBuilder.AUTO_TAG) detailItem = item },
+                        )
+                    }
                 }
                 }
             }
@@ -401,13 +423,17 @@ fun NodesPage(viewModel: AppViewModel) {
                     .fillMaxWidth(),
             ) {
                 items(displayed, key = { it.tag }) { item ->
-                    NodeRow(
-                        item = item,
-                        delay = delays[item.tag] ?: item.delay,
-                        selected = item.tag == selectedTag,
-                        onClick = { viewModel.selectNode(ConfigBuilder.GROUP_TAG, item.tag) },
-                        onLongPress = { if (item.tag != ConfigBuilder.AUTO_TAG) detailItem = item },
-                    )
+                    Box(
+                        modifier = Modifier.alpha(if (item.tag == ConfigBuilder.SMART_TAG) 0.5f else 1f),
+                    ) {
+                        NodeRow(
+                            item = item,
+                            delay = delays[item.tag] ?: item.delay,
+                            selected = item.tag == selectedTag,
+                            onClick = { onNodeTap(item) },
+                            onLongPress = { if (item.tag != ConfigBuilder.AUTO_TAG) detailItem = item },
+                        )
+                    }
                 }
             }
         }

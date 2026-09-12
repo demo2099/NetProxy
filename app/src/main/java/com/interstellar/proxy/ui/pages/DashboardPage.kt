@@ -279,13 +279,18 @@ fun DashboardPage(
 
             Spacer(Modifier.height(12.dp))
 
-            // ── 状态标签: 居中双胶囊, 点击进入分流设置 ──
+            // ── 状态标签: 居中三胶囊, 点击进入对应设置 ──
             val routingLabel = when (routingMode) {
                 "global" -> "全局"
                 "direct" -> "直连"
                 else -> "规则"
             }
             val scopeOn = proxyScope.label != "全部应用"
+            val switchModeLabel = when (storedSelected) {
+                ConfigBuilder.AUTO_TAG -> "自动"
+                ConfigBuilder.SMART_TAG -> "智能"
+                else -> "手动"
+            }
             Row(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
@@ -297,6 +302,10 @@ fun DashboardPage(
                 Spacer(Modifier.width(10.dp))
                 StatusChip(label = "应用分流", value = if (scopeOn) "开" else "关") {
                     onOpenSubPage(SettingsSubPage.PerApp)
+                }
+                Spacer(Modifier.width(10.dp))
+                StatusChip(label = "切换模式", value = switchModeLabel) {
+                    onOpenTab(MainTab.Nodes)
                 }
             }
 

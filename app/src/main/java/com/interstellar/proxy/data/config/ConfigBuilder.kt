@@ -26,13 +26,15 @@ object ConfigBuilder {
 
     const val GROUP_TAG = "proxy"
     const val AUTO_TAG = "auto"
+    /** Placeholder for the upcoming smart-switch mode (not yet functional). */
+    const val SMART_TAG = "smart"
     const val DIRECT_TAG = "direct"
     const val BLOCK_TAG = "block"
     private const val DNS_HOSTS_TAG = "dns-hosts"
 
     /** Tags that node names must never collide with. */
     private val RESERVED_TAGS =
-        setOf(GROUP_TAG, AUTO_TAG, DIRECT_TAG, BLOCK_TAG, "dns-out", DNS_HOSTS_TAG, "tun-in", "mixed-in")
+        setOf(GROUP_TAG, AUTO_TAG, SMART_TAG, DIRECT_TAG, BLOCK_TAG, "dns-out", DNS_HOSTS_TAG, "tun-in", "mixed-in")
 
     data class BuildOptions(
         val mode: OutboundMode = OutboundMode.RULE,
