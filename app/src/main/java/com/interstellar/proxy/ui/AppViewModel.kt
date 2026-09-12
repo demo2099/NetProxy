@@ -110,6 +110,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _testing = MutableStateFlow(false)
     val testing: StateFlow<Boolean> = _testing
 
+    /** Batch test progress (done, total); null while idle. */
+    private val _testProgress = MutableStateFlow<Pair<Int, Int>?>(null)
+    val testProgress: StateFlow<Pair<Int, Int>?> = _testProgress
+
+    private val _pingProgress = MutableStateFlow<Pair<Int, Int>?>(null)
+    val pingProgress: StateFlow<Pair<Int, Int>?> = _pingProgress
+
+    /** Epoch seconds when the current url-test run started (0 = idle). */
+    @Volatile private var testStartEpoch = 0L
+
     private val _subscriptions =
         MutableStateFlow(SubscriptionRepository.subscriptions.toList())
     val subscriptions: StateFlow<List<SubscriptionRepository.Subscription>> = _subscriptions
@@ -259,6 +269,21 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     map[item.tag] = item.urlTestDelay
                 }
                 _delays.value = map
+                // url-test progress: count results stamped after this run started
+                if (testStartEpoch > 0) {
+                    val done = outbounds.count { it.urlTestTime >= testStartEpoch }
+                    val prevTotal = _testProgress.value?.second ?: 0
+                    val total = maxOf(prevTotal, outbounds.size)
+                    if (total > 0) {
+                        if (done >= total) {
+                            _testProgress.value = null
+                            testStartEpoch = 0
+                            _testing.value = false
+                        } else {
+                            _testProgress.value = done.coerceAtMost(total) to total
+                        }
+                    }
+                }
                 // the first outbounds snapshot arrives before the url-test
                 // finishes; don't kill the spinner while probing
                 if (!probing) _testing.value = false
@@ -567,6 +592,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun urlTest(groupTag: String) {
         if (_testing.value) return
         _testing.value = true
+        testStartEpoch = System.currentTimeMillis() / 1000
+        _testProgress.value = 0 to urlTestTotal()
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 if (_status.value == Status.Started) {
@@ -579,8 +606,30 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 _message.value = "测速失败: ${e.message}"
             } finally {
                 _testing.value = false
+                _testProgress.value = null
+                testStartEpoch = 0
             }
         }
+    }
+
+    /** Denominator for the batch progress: live group size → known delays → pool size. */
+    private fun urlTestTotal(): Int {
+        _groups.value.find { it.tag == GROUP_TAG }?.let { group ->
+            var n = 0
+            val iterator = group.items
+            while (iterator.hasNext()) {
+                iterator.next()
+                n++
+            }
+            if (n > 0) return n
+        }
+        if (_delays.value.isNotEmpty()) return _delays.value.size
+        return SubscriptionRepository.poolOf(
+            _subscriptions.value,
+            _activeSubscriptionId.value,
+            _mixEnabled.value,
+            _mixSubscriptionIds.value,
+        ).size
     }
 
     /**
@@ -653,6 +702,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
                 val tags = ConfigBuilder.tagsFor(pool)
+                _pingProgress.value = 0 to pool.size
+                val done = java.util.concurrent.atomic.AtomicInteger()
                 val semaphore = kotlinx.coroutines.sync.Semaphore(12)
                 kotlinx.coroutines.coroutineScope {
                     pool.zip(tags).forEach { (node, tag) ->
@@ -676,12 +727,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                                 delaysMutex.withLock {
                                     _delays.value = _delays.value.toMutableMap().also { it[tag] = value }
                                 }
+                                _pingProgress.value = done.incrementAndGet() to pool.size
                             }
                         }
                     }
                 }
             } finally {
                 _pinging.value = false
+                _pingProgress.value = null
             }
         }
     }

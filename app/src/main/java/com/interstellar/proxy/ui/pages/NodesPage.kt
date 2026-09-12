@@ -234,6 +234,8 @@ fun NodesPage(viewModel: AppViewModel) {
                 )
             }
             Spacer(Modifier.width(8.dp))
+            val testProgress by viewModel.testProgress.collectAsState()
+            val testActive = testing || testProgress != null
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(12.dp))
@@ -241,7 +243,7 @@ fun NodesPage(viewModel: AppViewModel) {
                     .pressableClick { viewModel.urlTest(ConfigBuilder.GROUP_TAG) }
                     .padding(horizontal = 16.dp, vertical = 10.dp),
             ) {
-                if (testing) {
+                if (testActive) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "spin")
                         val sweep by transition.animateFloat(
@@ -268,7 +270,13 @@ fun NodesPage(viewModel: AppViewModel) {
                             )
                         }
                         Spacer(Modifier.width(6.dp))
-                        Text("测速中", color = colors.primary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            testProgress?.let { "${it.first}/${it.second}" } ?: "测速中",
+                            color = colors.primary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = FontFamily.Monospace,
+                        )
                     }
                 } else {
                     Text("测速", color = colors.primary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
@@ -277,6 +285,7 @@ fun NodesPage(viewModel: AppViewModel) {
             Spacer(Modifier.width(8.dp))
             // 直连 TCP Ping：不依赖内核，即时并发，结果流式回填
             val pinging by viewModel.pinging.collectAsState()
+            val pingProgress by viewModel.pingProgress.collectAsState()
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(12.dp))
@@ -311,7 +320,13 @@ fun NodesPage(viewModel: AppViewModel) {
                             )
                         }
                         Spacer(Modifier.width(6.dp))
-                        Text("Ping", color = colors.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            pingProgress?.let { "${it.first}/${it.second}" } ?: "Ping",
+                            color = colors.accent,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = FontFamily.Monospace,
+                        )
                     }
                 } else {
                     Text("Ping", color = colors.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
