@@ -69,7 +69,6 @@ import com.interstellar.proxy.ui.components.GlassCard
 import com.interstellar.proxy.ui.components.OrbitHero
 import com.interstellar.proxy.ui.components.SegmentedControl
 import com.interstellar.proxy.ui.components.StatusPill
-import com.interstellar.proxy.ui.components.TrafficSparkline
 import com.interstellar.proxy.ui.components.glassSurface
 import com.interstellar.proxy.ui.components.pressableClick
 import com.interstellar.proxy.ui.theme.LocalInterstellarColors
@@ -424,44 +423,46 @@ fun DashboardPage(
                         )
                     }
                 }
+                val connectionCount = when (coreKind) {
+                    com.interstellar.proxy.core.CoreKind.MIHOMO -> mihomoConnectionCount
+                    else -> activeConnectionCount
+                }
                 InstrumentCard(
                     caption = "流量",
                     onClick = { onOpenSubPage(SettingsSubPage.Connections) },
                     modifier = Modifier.weight(1f),
                     secondary = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text(
-                                "↓ $down/s ↑ $up/s",
-                                color = colors.textSecondary,
-                                fontSize = 11.sp,
-                                fontFamily = FontFamily.Monospace,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false),
-                            )
-                            Text(
-                                "Σ $total",
-                                color = colors.textTertiary,
-                                fontSize = 11.sp,
-                                fontFamily = FontFamily.Monospace,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
+                        Text(
+                            "Σ $total · $connectionCount 连接",
+                            color = colors.textTertiary,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     },
                 ) {
-                    TrafficSparkline(
-                        history = history,
-                        downColor = colors.success,
-                        upColor = colors.danger,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(34.dp),
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text(
+                            "↓ $down/s",
+                            color = colors.success,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1,
+                        )
+                        Text(
+                            "↑ $up/s",
+                            color = colors.danger,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1,
+                        )
+                    }
                 }
             }
 
