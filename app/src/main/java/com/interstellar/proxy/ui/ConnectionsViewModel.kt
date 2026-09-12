@@ -3,6 +3,10 @@ package com.interstellar.proxy.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.interstellar.proxy.core.ClashApiClient
+import com.interstellar.proxy.core.CoreKind
+import com.interstellar.proxy.core.MihomoCore
+import com.interstellar.proxy.data.Settings
 import com.interstellar.proxy.utils.CommandClient
 import com.interstellar.proxy.utils.CommandTarget
 import io.nekohasekai.libbox.ConnectionEvents
@@ -15,6 +19,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /** One active connection with live traffic (ui-facing snapshot). */
 data class ActiveConnection(
@@ -66,6 +73,8 @@ class ConnectionsViewModel(application: Application) : AndroidViewModel(applicat
         },
     )
 
+    private val clashApi by lazy { ClashApiClient(MihomoCore.API_PORT, Settings.apiSecret) }
+
     private suspend fun publish(events: ConnectionEvents) = withContext(Dispatchers.Default) {
         store.applyEvents(events)
         store.filterState(Libbox.ConnectionStateAll.toInt())
@@ -97,12 +106,18 @@ class ConnectionsViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun connect() {
-        client.connect()
+        if (Settings.coreKind == CoreKind.MIHOMO) {
+            connectMihomo()
+        } else {
+            client.connect()
+        }
         pollJob?.cancel()
         pollJob = viewModelScope.launch {
             while (isActive) {
                 delay(1500)
-                if (!_connected.value) {
+                if (Settings.coreKind == CoreKind.MIHOMO) {
+                    pollMihomoOnce()
+                } else if (!_connected.value) {
                     client.connect()
                 }
             }
@@ -115,13 +130,76 @@ class ConnectionsViewModel(application: Application) : AndroidViewModel(applicat
         client.disconnect()
     }
 
+    // ---- mihomo: Clash /connections snapshots (no event stream needed) ----
+
+    private fun connectMihomo() {
+        viewModelScope.launch { pollMihomoOnce() }
+    }
+
+    private suspend fun pollMihomoOnce() {
+        val snapshot = runCatching { clashApi.connections() }.getOrNull()
+        if (snapshot == null) {
+            _connected.value = false
+            return
+        }
+        val entries = snapshot["connections"] as? JsonArray ?: JsonArray(emptyList())
+        val now = System.currentTimeMillis()
+        val list = entries.mapNotNull { entry ->
+            val c = entry.jsonObject
+            val meta = c["metadata"]?.jsonObject ?: return@mapNotNull null
+            val str = { key: String ->
+                meta[key]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+            }
+            val id = c["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
+            val host = str("host") ?: str("sniffHost")
+            val destIp = str("destinationIP") ?: ""
+            val destPort = str("destinationPort") ?: ""
+            val destination = if (destIp.isBlank()) destPort else "$destIp:$destPort"
+            ActiveConnection(
+                id = id,
+                domain = host?.takeIf { it.isNotBlank() } ?: destination,
+                destination = destination,
+                network = str("network") ?: "tcp",
+                protocol = str("type") ?: "Mixed",
+                rule = listOfNotNull(
+                    c["rule"]?.jsonPrimitive?.content,
+                    c["rulePayload"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() },
+                ).joinToString("(").let { if (it.contains("(")) "$it)" else it },
+                chains = (c["chains"] as? JsonArray)?.map { it.jsonPrimitive.content } ?: emptyList(),
+                createdAt = parseClashTime(c["start"]?.jsonPrimitive?.content) ?: now,
+                uplink = c["upload"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0,
+                downlink = c["download"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0,
+                closed = false,
+            )
+        }
+        list.sortedByDescending { it.createdAt }
+        _connections.value = list
+        _connected.value = true
+    }
+
+    private fun parseClashTime(value: String?): Long? = runCatching {
+        java.time.OffsetDateTime.parse(value).toInstant().toEpochMilli()
+    }.getOrNull()
+
     fun closeConnection(id: String) {
+        if (Settings.coreKind == CoreKind.MIHOMO) {
+            viewModelScope.launch {
+                runCatching { clashApi.deleteConnection(id) }
+            }
+            return
+        }
         viewModelScope.launch {
             runCatching { CommandTarget.standaloneClient().closeConnection(id) }
         }
     }
 
     fun closeAll() {
+        if (Settings.coreKind == CoreKind.MIHOMO) {
+            viewModelScope.launch {
+                runCatching { clashApi.closeAllConnections() }
+            }
+            return
+        }
         viewModelScope.launch {
             runCatching { CommandTarget.standaloneClient().closeConnections() }
         }

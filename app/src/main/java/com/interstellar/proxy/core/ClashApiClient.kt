@@ -118,6 +118,34 @@ class ClashApiClient(
         }.getOrNull()
     }
 
+    /** Close one connection (DELETE /connections/{id}). */
+    suspend fun deleteConnection(id: String): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            call(
+                Request.Builder()
+                    .url("$base/connections/${encode(id)}")
+                    .header("Authorization", auth)
+                    .delete()
+                    .build(),
+            )
+            true
+        }.getOrDefault(false)
+    }
+
+    /** Close all connections (DELETE /connections). */
+    suspend fun closeAllConnections(): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            call(
+                Request.Builder()
+                    .url("$base/connections")
+                    .header("Authorization", auth)
+                    .delete()
+                    .build(),
+            )
+            true
+        }.getOrDefault(false)
+    }
+
     /** Hot-reload the config file (PUT /configs). */
     suspend fun reload(path: String): Boolean = withContext(Dispatchers.IO) {
         runCatching {
