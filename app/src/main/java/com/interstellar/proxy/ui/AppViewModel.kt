@@ -204,6 +204,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** Epoch seconds when the current url-test run started (0 = idle). */
     @Volatile private var testStartEpoch = 0L
 
+    /** sing-box's per-node url-test HTTP timeout (constant.TCPTimeout, hardcoded in the kernel). */
+    private val PER_NODE_TEST_TIMEOUT_MS = 15_000L
+
     private val _subscriptions =
         MutableStateFlow(SubscriptionRepository.subscriptions.toList())
     val subscriptions: StateFlow<List<SubscriptionRepository.Subscription>> = _subscriptions
@@ -907,27 +910,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         CoreKind.XRAY -> tcpPingPool()
 
                         CoreKind.SINGBOX -> {
-                            val ok = runCatching { CommandTarget.standaloneClient().urlTest(groupTag) }.isSuccess
+                            // test the AUTO urltest group (members = every node
+                            // tag), not the selector: the selector's mixed
+                            // group+node items get skipped wholesale by the
+                            // kernel's per-item pass — that's the "大量未测"
+                            // at the bottom. Mirrors the mihomo path
+                            // (groupDelay(AUTO_TAG)) and the disconnected path.
+                            val ok = runCatching {
+                                CommandTarget.standaloneClient().urlTest(ConfigBuilder.AUTO_TAG)
+                            }.isSuccess
                             // completion is reported by the outbounds stream
                             // (updateOutbounds counts done/total and clears the
-                            // epoch). Failed nodes never get stamped, so a pure
-                            // count-up would stall until the hard cap — also
-                            // bail out once the counter stops moving.
-                            if (ok) {
-                                val deadline = System.currentTimeMillis() + 60_000
-                                var lastDone = _testProgress.value?.first ?: -1
-                                var lastChange = System.currentTimeMillis()
-                                while (System.currentTimeMillis() < deadline && testStartEpoch > 0) {
-                                    delay(500)
-                                    val done = _testProgress.value?.first ?: -1
-                                    if (done != lastDone) {
-                                        lastDone = done
-                                        lastChange = System.currentTimeMillis()
-                                    } else if (System.currentTimeMillis() - lastChange > 10_000) {
-                                        break // stalled: only unstampable failures remain
-                                    }
-                                }
-                            }
+                            // epoch); settle-aware wait with a hard cap
+                            if (ok) awaitUrlTestSettled()
                         }
                     }
                     if (Settings.coreKind == CoreKind.MIHOMO) delay(12_000)
@@ -956,6 +951,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             _mixEnabled.value,
             _mixSubscriptionIds.value,
         ).size
+    }
+
+    /**
+     * Wait for the kernel url-test to finish. Nodes test concurrently, each
+     * with sing-box's own per-node HTTP timeout (constant.TCPTimeout = 15s,
+     * not configurable), so the run is bounded by that plus scheduling
+     * margin — wait for the stream's done>=total clear, capped at 15s+10s.
+     * No independent overall-stall heuristic.
+     */
+    private suspend fun awaitUrlTestSettled(capMs: Long = PER_NODE_TEST_TIMEOUT_MS + 10_000) {
+        val deadline = System.currentTimeMillis() + capMs
+        while (System.currentTimeMillis() < deadline && testStartEpoch > 0) {
+            delay(500)
+        }
     }
 
     /**
@@ -1017,7 +1026,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     CommandTarget.standaloneClient().urlTest(ConfigBuilder.AUTO_TAG)
                 }.isSuccess
                 if (!ok) throw IllegalStateException("测速命令发送失败")
-                delay(10_000)
+                // bounded by the kernel's per-node timeout (15s) + margin —
+                // a fixed 10s here used to cut the headless core mid-run and
+                // leave the bottom nodes 未测
+                awaitUrlTestSettled()
             }
         } finally {
             probeSocketUp = false
