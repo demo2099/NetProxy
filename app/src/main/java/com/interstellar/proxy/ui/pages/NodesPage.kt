@@ -176,9 +176,14 @@ fun NodesPage(viewModel: AppViewModel) {
             }
         }
         val nodeItems = remember(allItems) { allItems.filterNot(::isGroupItem) }
-        val selectedTag = mainGroup?.selected?.takeIf { it.isNotBlank() }
-            ?: storedSelected.takeIf { it.isNotBlank() }
-            ?: ConfigBuilder.AUTO_TAG
+        // smart mode is only ever visible in the STORED selection (the live
+        // group always names a concrete node) — it wins the highlight race
+        val selectedTag = when {
+            storedSelected == ConfigBuilder.SMART_TAG -> ConfigBuilder.SMART_TAG
+            else -> mainGroup?.selected?.takeIf { it.isNotBlank() }
+                ?: storedSelected.takeIf { it.isNotBlank() }
+                ?: ConfigBuilder.AUTO_TAG
+        }
 
         if (nodeItems.isEmpty()) {
             EmptyHint(
