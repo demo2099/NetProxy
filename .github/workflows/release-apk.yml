@@ -26,6 +26,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # full history + tags: the release-notes step diffs against the previous tag
+          fetch-depth: 0
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -140,9 +143,29 @@ jobs:
           name: interstellar-${{ github.ref_name }}
           path: app/build/outputs/apk/release/*.apk
 
+      # 更新摘要 = 版本提交(打 tag 的那个 commit)的完整 message(标题+正文),
+      # 再附自上一 tag 以来的全部提交; 与 "vX.Y.Z: 标题 + bullet 正文" 的提交惯例配套
+      - name: Generate release notes
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          PREV_TAG=$(git tag --list 'v*' --sort=-v:refname | grep -vx "$TAG" | head -n1 || true)
+          {
+            echo "## 更新摘要"
+            echo
+            git log -1 --format='%B' "$TAG"
+            RANGE_LOG=$(git log --no-merges --format='- %h %s' "${PREV_TAG}..${TAG}^" 2>/dev/null || true)
+            if [ -n "$RANGE_LOG" ]; then
+              echo
+              echo "## 自 ${PREV_TAG} 以来的全部提交"
+              echo
+              echo "$RANGE_LOG"
+            fi
+          } > release_notes.md
+          cat release_notes.md
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
           files: app/build/outputs/apk/release/*.apk
-          generate_release_notes: true
+          body_path: release_notes.md
           fail_on_unmatched_files: true
