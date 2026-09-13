@@ -62,6 +62,23 @@ android {
         }
     }
 
+    // 两套产物，同一个 applicationId（可互相覆盖升级）：
+    //   slim = 仅 sing-box 内核，体积最小
+    //   full = 另含 mihomo / Xray，可在界面「内核」里切换
+    // sidecar 的 .so 与 v2fly geodata 只放在 app/src/full/ 下（见 tools/fetch_cores.py），
+    // 所以 slim 天然不会打进它们 —— 不需要在打包阶段做排除。
+    flavorDimensions += "cores"
+    productFlavors {
+        create("slim") {
+            dimension = "cores"
+            buildConfigField("String", "CORE_KINDS", "\"singbox\"")
+        }
+        create("full") {
+            dimension = "cores"
+            buildConfigField("String", "CORE_KINDS", "\"singbox,mihomo,xray\"")
+        }
+    }
+
     // per-ABI APKs: ~40MB instead of one 146MB universal blob
     splits {
         abi {
@@ -90,14 +107,18 @@ android {
     }
 }
 
-// APK 输出统一以 interstellar 开头：interstellar-<abi>-<buildType>.apk
+// APK 输出统一以 interstellar 开头：interstellar-<flavor>-<abi>-<buildType>.apk
+// 例如 interstellar-slim-arm64-v8a-release.apk / interstellar-full-universal-debug.apk
 androidComponents {
     onVariants { variant ->
+        val flavor = variant.productFlavors.joinToString("-") { it.second }
         variant.outputs.forEach { output ->
             val abi = output.filters
                 .firstOrNull { it.filterType == FilterConfiguration.FilterType.ABI }
                 ?.identifier
-            output.outputFileName.set("interstellar-${abi ?: "universal"}-${variant.name}.apk")
+            output.outputFileName.set(
+                "interstellar-${flavor}-${abi ?: "universal"}-${variant.buildType}.apk"
+            )
         }
     }
 }

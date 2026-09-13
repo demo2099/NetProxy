@@ -1,15 +1,17 @@
-# 编译 APK（不需要打 tag）。可在 Actions 页面手动触发，也可 push 到 main 自动编译。
-# 产物在对应 run 的 Artifacts 里下载（无需签名也能出包）。
-# 发正式版仍走 release-apk.yml（打 v* tag → 建 GitHub Release）。
+# 编译 APK 并发布到 GitHub Releases（不需要打 tag）。
+# 手动触发（workflow_dispatch）时按 version.properties 的 versionName 建 tag（如 v0.5.3）
+# 并把产物传到对应 Release；重复运行会覆盖同一个 Release 的 APK，不会刷屏。
+# push 到 main 只编译、不发 Release（避免每次提交都建 release）。
 #
-# 背景：内核二进制（app/libs/libbox.aar）被 .gitignore 排除、不在仓库里，本工作流
-# 会在 CI 内按与 release-apk.yml 相同的方式重建并缓存，所以首次跑较慢、之后走缓存会快很多。
+# 每次构建出两套产物（Gradle product flavor，见 app/build.gradle.kts 的 flavorDimensions "cores"）：
+#   slim = 仅 sing-box 内核，体积最小
+#   full = 另含 mihomo / Xray sidecar，可在 App 内「内核」处切换
+# 每套都按 ABI 分包（armeabi-v7a / arm64-v8a / x86 / x86_64 + universal）。
 #
-# 本分支只打包 sing-box 内核：mihomo / Xray 这两个 sidecar（libmihomo.so /
-# libxray.so / libhev.so）及其 v2fly geodata 已不再构建和打包，所以下面没有
-# sidecar 缓存与 fetch_cores 步骤。每个 64 位分包因此小约 36MB。
-# 要恢复 sidecar：给 fetch_cores 那步加 env INTERSTELLAR_WITH_SIDECARS=1，
-# 并还原 app/src/main/assets/geodata（git 历史里有）。
+# 背景：内核二进制不入库（.gitignore），CI 内重建并缓存：
+#   app/libs/libbox.aar       sing-box 内核（cmd/internal/build_libbox）
+#   app/src/full/jniLibs/     mihomo / hev / xray sidecar（tools/fetch_cores.py）
+# sidecar 放在 app/src/full/ 这个 flavor source set 下，所以 slim 天然不会打进它们。
 
 name: Build APK
 
@@ -19,17 +21,30 @@ on:
       build_type:
         description: '构建类型'
         required: true
-        default: debug
+        default: release
         type: choice
         options:
-          - debug
           - release
+          - debug
           - both
+      publish:
+        description: '是否发布到 GitHub Releases'
+        required: true
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      tag:
+        description: '自定义 Release tag（留空 = v<versionName>）'
+        required: false
+        default: ''
+        type: string
   push:
     branches: [ main ]
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: build-${{ github.ref }}
@@ -63,7 +78,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # 装好 NDK，供 sing-box 内核（cmd/internal/build_libbox）构建使用
+      # NDK 供 sing-box 内核构建（build_libbox 固定用 28.0.13004108）与 sidecar（mihomo 非 arm64 ABI + hev）共用
       - name: Install Android NDK & platforms
         run: |
           SDKMANAGER="$(ls -d "${ANDROID_HOME}"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | sort | tail -1)"
@@ -104,6 +119,19 @@ jobs:
           go run ./cmd/internal/build_libbox
           cp libbox.aar "${GITHUB_WORKSPACE}/app/libs/libbox.aar"
 
+      # sidecar 只影响 full flavor；缓存路径是 flavor source set（不是 app/src/main）
+      - name: Cache sidecar cores (mihomo cmfa + hev + xray)
+        uses: actions/cache@v4
+        with:
+          path: app/src/full/jniLibs
+          key: sidecar-v3-full-mihomo-v1.19.30-cmfa-hev-2.17.1-xray-v26.3.27
+
+      # mihomo 官方 android 二进制会读 packages.xml(root-only) fatal，必须 cmfa 标签自编译；
+      # hev 为 TUN→socks5 JNI 桥(ndk-build)；xray 走官方 release 下载。
+      # 产物落进 app/src/full/，所以 slim flavor 不含它们。
+      - name: Build sidecar cores (mihomo / hev / xray)
+        run: python tools/fetch_cores.py
+
       # 签名材料不入库。配置下面 4 个 repo secrets 后产物即与正式签名一致；
       # 未配置时 release 会按 app/build.gradle.kts 的回退逻辑用 debug 签名。
       - name: Restore signing config (optional)
@@ -125,17 +153,56 @@ jobs:
             echo "keyPassword=${KEY_PASSWORD}"
           } > signing.properties
 
+      - name: Resolve release tag
+        id: ver
+        run: |
+          VERSION=$(grep '^versionName=' version.properties | cut -d= -f2 | tr -d ' \r')
+          TAG="${{ github.event.inputs.tag }}"
+          if [ -z "$TAG" ]; then
+            TAG="v${VERSION}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "resolved tag=${TAG} (versionName=${VERSION})"
+
+      # 两个 flavor 都要编：slim（仅 sing-box）与 full（含 mihomo / Xray）
       - name: Build APK
         run: |
           chmod +x gradlew
-          BT="${{ github.event.inputs.build_type || 'debug' }}"
+          BT="${{ github.event.inputs.build_type || 'release' }}"
           case "$BT" in
-            release) TASKS=":app:assembleRelease" ;;
-            both)    TASKS=":app:assembleDebug :app:assembleRelease" ;;
-            *)       TASKS=":app:assembleDebug" ;;
+            debug)   TASKS=":app:assembleSlimDebug :app:assembleFullDebug" ;;
+            both)    TASKS=":app:assembleSlimDebug :app:assembleFullDebug :app:assembleSlimRelease :app:assembleFullRelease" ;;
+            *)       TASKS=":app:assembleSlimRelease :app:assembleFullRelease" ;;
           esac
           echo "build_type=${BT}  tasks=${TASKS}"
           ./gradlew $TASKS --no-daemon
+
+      - name: Generate release notes
+        run: |
+          cat > release_notes.md <<'EOF'
+          ## 下载哪个？
+
+          每次构建出**两套**产物，每套都含全部 CPU 架构：
+
+          | 套件 | 内核 | 说明 |
+          |---|---|---|
+          | `slim` | 仅 sing-box | 体积最小，够用就选它 |
+          | `full` | sing-box + mihomo + Xray | 可在 App 内「内核」处切换 |
+
+          ## 按手机 CPU 架构选 APK
+
+          | 文件名里的 ABI | 适用设备 |
+          |---|---|
+          | `arm64-v8a` | 2017 年之后的绝大多数手机 —— **一般选这个** |
+          | `armeabi-v7a` | 老款 32 位手机 |
+          | `x86_64` / `x86` | 模拟器（BlueStacks / WSA） |
+          | `universal` | 不确定架构时用，一个包内含全部架构 |
+
+          > 未配置签名 secrets 时产物使用 debug 签名。
+          EOF
+          echo "构建类型：\`${{ github.event.inputs.build_type || 'release' }}\`" >> release_notes.md
+          cat release_notes.md
 
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
@@ -144,3 +211,16 @@ jobs:
           path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
           retention-days: 30
+
+      # 只有手动触发且 publish=true 时才发 Release。
+      # 同一个 tag 重复运行 = 覆盖该 Release 的 APK（不会产生新 Release）。
+      - name: Publish to GitHub Releases
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: 星际穿越 ${{ steps.ver.outputs.tag }}
+          body_path: release_notes.md
+          files: app/build/outputs/apk/**/*.apk
+          fail_on_unmatched_files: true
+          make_latest: ${{ github.event.inputs.build_type != 'debug' }}

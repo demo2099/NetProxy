@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Build sidecar cores into app/src/main/jniLibs/<abi>/ as lib*.so.
+"""Build sidecar cores into app/src/full/jniLibs/<abi>/ as lib*.so.
+
+They land in the `full` flavor's source set on purpose: the `slim` flavor
+(sing-box only) therefore never packages them, with no packaging-time
+exclusion needed. See app/build.gradle.kts (flavorDimensions "cores") and
+CoreKind.available.
 
 Exec from nativeLibraryDir is the only W^X-legal exec path on API 29+;
 useLegacyPackaging (already set) gets jniLibs extracted there.
@@ -18,9 +23,8 @@ Run from repo root:  python tools/fetch_cores.py
 Requires: git, go (mihomo); ndk-build via ANDROID_NDK_HOME or
 $ANDROID_HOME/ndk/<ver> for the non-arm64 mihomo ABIs and hev.
 
-NOTE: this fork ships the sing-box core only — sing-box runs in-process via
-libbox.aar and needs none of these sidecars. The default run is therefore a
-no-op; pass INTERSTELLAR_WITH_SIDECARS=1 to actually build the sidecars.
+The `full` flavor needs these, so they are built by default. Pass
+INTERSTELLAR_SKIP_SIDECARS=1 to skip (only useful for a slim-only build).
 """
 import os
 import shutil
@@ -40,13 +44,13 @@ XRAY_ZIPS = {  # recent Xray releases dropped 32-bit android — 2 ABIs only
 XRAY_MIRRORS = ["", "https://ghfast.top/", "https://gh-proxy.com/", "https://ghproxy.net/"]
 
 ROOT = Path(__file__).resolve().parent.parent
-JNILIBS = ROOT / "app" / "src" / "main" / "jniLibs"
+# full flavor source set — keeps the sidecars out of the slim flavor
+FULL_SRC = ROOT / "app" / "src" / "full"
+JNILIBS = FULL_SRC / "jniLibs"
 BUILD = Path(os.environ.get("INTERSTELLAR_BUILD_DIR", ROOT / "build" / "cores"))
 
-# sing-box-only by default: the sidecars are not packaged in this fork
-# (see CoreKind.available), so building them just wastes CI minutes and
-# bloats the APK. Opt in explicitly to restore them.
-WITH_SIDECARS = os.environ.get("INTERSTELLAR_WITH_SIDECARS", "").strip().lower() in (
+# Built by default: the `full` flavor packages them. Skip only for slim-only builds.
+SKIP_SIDECARS = os.environ.get("INTERSTELLAR_SKIP_SIDECARS", "").strip().lower() in (
     "1", "true", "yes", "on",
 )
 
@@ -238,8 +242,9 @@ def fetch_xray() -> None:
             with z.open("xray") as src, open(out / "libxray.so", "wb") as dst:
                 shutil.copyfileobj(src, dst)
         print(f"xray {abi} ok")
-    # geoip.dat for Xray routing rules (mihomo uses geoip.metadb instead)
-    assets = ROOT / "app" / "src" / "main" / "assets" / "geodata"
+    # geoip.dat for Xray routing rules (mihomo uses geoip.metadb instead).
+    # Also into the full flavor's source set — slim must not carry it.
+    assets = FULL_SRC / "assets" / "geodata"
     assets.mkdir(parents=True, exist_ok=True)
     geoip = assets / "geoip.dat"
     if not geoip.is_file():
@@ -250,9 +255,9 @@ def fetch_xray() -> None:
 
 
 def main() -> None:
-    if not WITH_SIDECARS:
-        print("sing-box-only build — skipping mihomo / hev / xray sidecars.\n"
-              "Set INTERSTELLAR_WITH_SIDECARS=1 to build them too.")
+    if SKIP_SIDECARS:
+        print("INTERSTELLAR_SKIP_SIDECARS set — skipping mihomo / hev / xray.\n"
+              "Only the slim flavor will be complete.")
         return
     build_mihomo()
     build_hev()

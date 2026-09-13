@@ -1,8 +1,10 @@
 # 推送 v* tag 自动编译 release APK 并发布到 GitHub Release
 # 发版: 改 version.properties → 提交 → git tag v<versionName> && git push origin v<versionName>
 #
-# 流程: 构建 sing-box 内核 libbox.aar(app/libs 被 gitignore, CI 从源码重建, 按 tag 缓存)
-#       → 注入签名(可选 secrets) → assembleRelease(按 ABI 分包) → 上传 Release
+# 流程: 构建 sing-box 内核 libbox.aar + sidecar(mihomo/hev/xray → app/src/full/)
+#       (均在 .gitignore 内, CI 从源码重建并按 tag 缓存)
+#       → 注入签名(可选 secrets) → assembleSlimRelease + assembleFullRelease
+#       (slim 仅 sing-box, full 含 mihomo/Xray; 各按 ABI 分包) → 上传 Release
 
 name: Release APK
 
@@ -56,11 +58,11 @@ jobs:
       - name: Ensure app/libs exists
         run: mkdir -p app/libs
 
-      - name: Cache sidecar cores (mihomo cmfa + hev)
+      - name: Cache sidecar cores (mihomo cmfa + hev + xray)
         uses: actions/cache@v4
         with:
-          path: app/src/main/jniLibs
-          key: sidecar-v2-mihomo-v1.19.30-cmfa-hev-2.17.1-xray-v26.3.27
+          path: app/src/full/jniLibs
+          key: sidecar-v3-full-mihomo-v1.19.30-cmfa-hev-2.17.1-xray-v26.3.27
 
       # mihomo 官方 android 二进制的 TUN 会读 packages.xml(root-only) fatal,
       # 必须 cmfa 标签自编译; hev 为 TUN→socks5 JNI 桥(ndk-build)
@@ -124,24 +126,26 @@ jobs:
             exit 1
           fi
 
+      # 两个 flavor 都要编：slim（仅 sing-box）与 full（含 mihomo / Xray）
       - name: Build release APK
         run: |
           chmod +x gradlew
-          ./gradlew :app:assembleRelease --no-daemon
+          ./gradlew :app:assembleSlimRelease :app:assembleFullRelease --no-daemon
 
-      # interstellar-<abi>-release.apk → interstellar-<abi>-<tag>.apk
+      # interstellar-<flavor>-<abi>-release.apk → interstellar-<flavor>-<abi>-<tag>.apk
+      # 带 flavor 后 APK 落在 app/build/outputs/apk/<flavor>/release/
       - name: Rename APKs with tag
         run: |
-          cd app/build/outputs/apk/release
-          for f in interstellar-*-release.apk; do
+          for f in app/build/outputs/apk/*/release/interstellar-*-release.apk; do
             mv "$f" "${f%-release.apk}-${GITHUB_REF_NAME}.apk"
           done
+          find app/build/outputs/apk -name '*.apk' | sort
 
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
           name: interstellar-${{ github.ref_name }}
-          path: app/build/outputs/apk/release/*.apk
+          path: app/build/outputs/apk/**/*.apk
 
       # 更新摘要 = "版本提交"(范围内最后改 version.properties 的那个)的完整
       # message(标题+正文), 再附自上一 tag 以来的其余提交。按 version.properties
@@ -172,6 +176,6 @@ jobs:
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/release/*.apk
+          files: app/build/outputs/apk/**/*.apk
           body_path: release_notes.md
           fail_on_unmatched_files: true

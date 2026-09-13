@@ -19,8 +19,13 @@ signing.properties
 app/libs/libbox.aar
 
 # sidecar cores (mihomo/xray/hev) — fetched via tools/fetch_cores.py (CI 缓存)
-app/src/main/jniLibs/
+# 放在 full flavor 的 source set 下，slim flavor 因此天然不含它们
+app/src/full/jniLibs/
 
 # agent workspace / kotlin session files
 .zcode/
 .kotlin/
+
+# python bytecode
+__pycache__/
+*.pyc

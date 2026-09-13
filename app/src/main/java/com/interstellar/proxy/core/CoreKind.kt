@@ -1,5 +1,7 @@
 package com.interstellar.proxy.core
 
+import com.interstellar.proxy.BuildConfig
+
 /**
  * Switchable proxy cores. sing-box runs in-process via libbox; mihomo / Xray
  * run as sidecar processes from nativeLibraryDir (see SidecarProcess).
@@ -11,19 +13,26 @@ enum class CoreKind(val wire: String, val displayName: String) {
 
     companion object {
         /**
-         * Cores actually packaged in this build.
+         * Cores packaged in *this* flavor. app/build.gradle.kts injects the list
+         * as BuildConfig.CORE_KINDS:
          *
-         * This fork ships sing-box only: the mihomo / Xray sidecars
-         * (libmihomo.so, libxray.so, libhev.so) and their v2fly geodata are no
-         * longer built or bundled, so both the picker and [from] are limited to
-         * sing-box. That also means a stale saved value like "mihomo" degrades
-         * to sing-box instead of trying to launch a sidecar that isn't there.
+         *   slim -> "singbox"              no sidecar binaries at all
+         *   full -> "singbox,mihomo,xray"  app/src/full/ ships the .so + geodata
          *
-         * To bring a sidecar back: add it here, run
-         * `INTERSTELLAR_WITH_SIDECARS=1 python tools/fetch_cores.py`, and
-         * restore app/src/main/assets/geodata (git history has it).
+         * Both the picker and [from] are restricted to this list, so a settings
+         * value saved by a `full` build (e.g. "mihomo") degrades to sing-box
+         * when the same user runs a `slim` build, instead of trying to launch a
+         * sidecar that was never packaged.
+         *
+         * `by lazy` so it is never evaluated while the enum constants are still
+         * being initialised.
          */
-        val available: List<CoreKind> = listOf(SINGBOX)
+        val available: List<CoreKind> by lazy {
+            BuildConfig.CORE_KINDS
+                .split(',')
+                .mapNotNull { wire -> entries.find { it.wire == wire.trim() } }
+                .ifEmpty { listOf(SINGBOX) }
+        }
 
         fun from(value: String?): CoreKind = available.find { it.wire == value } ?: SINGBOX
     }
