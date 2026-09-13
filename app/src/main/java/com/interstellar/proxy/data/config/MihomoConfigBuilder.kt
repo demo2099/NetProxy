@@ -297,8 +297,19 @@ object MihomoConfigBuilder {
             NodeType.ANYTLS -> {
                 put("type", "anytls")
                 node.password?.let { put("password", it) }
-                node.sni?.let { put("sni", it) }
-                node.insecure?.let { put("skip-cert-verify", it) }
+                // anytls is TLS-only, so mihomo needs an explicit tls: true —
+                // the Clash YAML we consume carries no `tls` key for it, and
+                // without the block the outbound cannot handshake at all.
+                applyCommon(node, tlsAlways = true)
+                node.reality?.let { reality ->
+                    put(
+                        "reality-opts",
+                        Yaml.map {
+                            put("public-key", reality.publicKey)
+                            reality.shortId?.let { put("short-id", it) }
+                        },
+                    )
+                }
             }
 
             NodeType.SSH -> {
@@ -320,7 +331,7 @@ object MihomoConfigBuilder {
         else -> v.toIntOrNull() ?: v
     }
 
-    /** TLS + fingerprint block shared by vmess/vless/trojan. */
+    /** TLS + fingerprint block shared by vmess/vless/trojan/anytls. */
     private fun Yaml.Node.applyCommon(node: ProxyNode, tlsAlways: Boolean = false) {
         val hasTls = node.tls || node.reality != null || tlsAlways
         if (hasTls) put("tls", true)

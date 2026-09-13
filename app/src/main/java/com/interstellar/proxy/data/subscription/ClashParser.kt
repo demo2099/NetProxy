@@ -68,11 +68,7 @@ object ClashParser {
             )
 
             NodeType.WIREGUARD -> parseWireguard(proxy, node)
-            NodeType.ANYTLS -> node.copy(
-                password = proxy.str("password"),
-                sni = proxy.str("sni"),
-                insecure = proxy.bool("skip-cert-verify"),
-            )
+            NodeType.ANYTLS -> parseAnytls(proxy, node)
 
             NodeType.SSH -> node.copy(
                 sshUser = proxy.str("username"),
@@ -83,13 +79,30 @@ object ClashParser {
         }
     }
 
-    private fun commonTls(proxy: JsonObject, node: ProxyNode): ProxyNode {
+    /**
+     * @param defaultTls value to use when the proxy has no explicit `tls` key.
+     *   TLS-only protocols (anytls, and trojan by convention) must pass true —
+     *   see [parseAnytls].
+     */
+    private fun commonTls(proxy: JsonObject, node: ProxyNode, defaultTls: Boolean = false): ProxyNode {
+        val impliedTls = defaultTls || node.type == NodeType.TROJAN
         return node.copy(
-            tls = proxy.bool("tls") ?: (node.type == NodeType.TROJAN),
+            tls = proxy.bool("tls") ?: impliedTls,
             sni = proxy.str("servername") ?: proxy.str("sni"),
             alpn = proxy.strList("alpn"),
             insecure = proxy.bool("skip-cert-verify"),
             fingerprint = proxy.str("client-fingerprint"),
+        )
+    }
+
+    /** Clash `reality-opts` -> ProxyNode.RealityParams. Also implies TLS. */
+    private fun withReality(proxy: JsonObject, node: ProxyNode): ProxyNode {
+        val opts = proxy.obj("reality-opts") ?: return node
+        return node.copy(
+            reality = ProxyNode.RealityParams(
+                publicKey = opts.str("public-key") ?: opts.str("pbk") ?: "",
+                shortId = opts.str("short-id") ?: opts.str("sid"),
+            ),
         )
     }
 
@@ -164,17 +177,11 @@ object ClashParser {
             uuid = proxy.str("uuid"),
             flow = proxy.str("flow"),
         )
-        val realityOpts = proxy.obj("reality-opts")
-        if (realityOpts != null) {
-            node = node.copy(
-                tls = true,
-                reality = ProxyNode.RealityParams(
-                    publicKey = realityOpts.str("public-key") ?: realityOpts.str("pbk") ?: "",
-                    shortId = realityOpts.str("short-id") ?: realityOpts.str("sid"),
-                ),
-            )
-        }
-        node = commonTls(proxy, node)
+        node = withReality(proxy, node)
+        // reality implies TLS even when the YAML carries no explicit `tls` key.
+        // (commonTls used to run unconditionally with the trojan-only default,
+        // which silently reset a reality node's tls back to false.)
+        node = commonTls(proxy, node, defaultTls = node.reality != null)
         node = applyTransport(proxy, node)
         return node
     }
@@ -184,6 +191,19 @@ object ClashParser {
         node = commonTls(proxy, node)
         node = applyTransport(proxy, node)
         return node
+    }
+
+    /**
+     * anytls is TLS-only, and Clash YAML normally carries no `tls` key for it
+     * (the protocol implies TLS). Without forcing it on, the generated sing-box
+     * outbound has no `tls` block and sing-box rejects the WHOLE config with
+     * "initialize outbound[n]: TLS required" — which takes every node's speed
+     * test down, not just the anytls ones. The reality-opts/utls fields matter
+     * too: dropping them validates fine but the handshake can never succeed.
+     */
+    private fun parseAnytls(proxy: JsonObject, base: ProxyNode): ProxyNode {
+        val node = base.copy(password = proxy.str("password"))
+        return commonTls(proxy, withReality(proxy, node), defaultTls = true)
     }
 
     private fun parseHysteria2(proxy: JsonObject, base: ProxyNode): ProxyNode {
