@@ -910,12 +910,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                             val ok = runCatching { CommandTarget.standaloneClient().urlTest(groupTag) }.isSuccess
                             // completion is reported by the outbounds stream
                             // (updateOutbounds counts done/total and clears the
-                            // epoch); a fixed 12s used to kill the counter
-                            // mid-run on big pools — wait it out with a cap
+                            // epoch). Failed nodes never get stamped, so a pure
+                            // count-up would stall until the hard cap — also
+                            // bail out once the counter stops moving.
                             if (ok) {
-                                val deadline = System.currentTimeMillis() + 90_000
+                                val deadline = System.currentTimeMillis() + 60_000
+                                var lastDone = _testProgress.value?.first ?: -1
+                                var lastChange = System.currentTimeMillis()
                                 while (System.currentTimeMillis() < deadline && testStartEpoch > 0) {
                                     delay(500)
+                                    val done = _testProgress.value?.first ?: -1
+                                    if (done != lastDone) {
+                                        lastDone = done
+                                        lastChange = System.currentTimeMillis()
+                                    } else if (System.currentTimeMillis() - lastChange > 10_000) {
+                                        break // stalled: only unstampable failures remain
+                                    }
                                 }
                             }
                         }
