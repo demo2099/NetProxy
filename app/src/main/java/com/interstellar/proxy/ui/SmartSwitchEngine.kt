@@ -54,6 +54,8 @@ class SmartSwitchEngine(
         val active: Boolean = false,
         val phase: String = "空闲",
         val currentDelayMs: Int = 0,
+        /** The node smart mode currently rides on (what the card should show). */
+        val currentTag: String? = null,
         val candidateCount: Int = 0,
         val lastSwitchTo: String? = null,
         val lastSwitchAt: Long = 0,
@@ -131,7 +133,7 @@ class SmartSwitchEngine(
             if (state.active) state = state.copy(active = false, phase = "空闲")
             return
         }
-        state = state.copy(active = true, phase = "巡检中")
+        state = state.copy(active = true, phase = "巡检中", currentTag = currentTag())
         val tag = currentTag()
         val real = probeExit()
         state = state.copy(currentDelayMs = real)
@@ -191,6 +193,7 @@ class SmartSwitchEngine(
             // API-less (Xray): switch-verify candidates in cached order
             for (tag in ordered.take(VERIFY_ATTEMPTS)) {
                 if (!applySwitch(tag)) continue
+                state = state.copy(currentTag = tag)
                 val real = probeExit()
                 record(tag, real)
                 if (real in 1 until REAL_MAX_MS) {
@@ -226,6 +229,7 @@ class SmartSwitchEngine(
                         record(tag, delay)
                         state = state.copy(
                             phase = "已切换 ${delay}ms",
+                            currentTag = tag,
                             lastSwitchTo = tag,
                             lastSwitchAt = System.currentTimeMillis(),
                             currentDelayMs = delay,

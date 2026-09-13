@@ -52,6 +52,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.interstellar.proxy.data.SubscriptionRepository
+import com.interstellar.proxy.data.Settings
 import com.interstellar.proxy.data.config.ConfigBuilder
 import com.interstellar.proxy.ui.AppViewModel
 import com.interstellar.proxy.ui.components.IosSwitch
@@ -401,9 +402,11 @@ fun NodesPage(viewModel: AppViewModel) {
             // auto mode active → show the node the urltest group is on right now
             source = autoNow,
         )
-        // smart mode: live status card (engine state), tap to activate
+        // smart mode: live status card — shows the node the engine rides on
         val smartState by viewModel.smartState.collectAsState()
         val smartOn = selectedTag == ConfigBuilder.SMART_TAG
+        val smartNode = smartState.currentTag
+            ?: (if (smartOn) Settings.smartActiveTag.takeIf { it.isNotBlank() } else null)
         val smartCard = NodeEntry(
             tag = ConfigBuilder.SMART_TAG,
             type = "smart",
@@ -412,6 +415,7 @@ fun NodesPage(viewModel: AppViewModel) {
             title = "智能",
             source = when {
                 !smartOn -> "点按开启"
+                smartNode != null -> smartNode
                 smartState.active -> smartState.phase
                 else -> "连接后自动择优"
             },
@@ -730,7 +734,7 @@ private fun NodeRow(
                     fontSize = 11.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.widthIn(max = 96.dp),
+                    modifier = Modifier.widthIn(max = 128.dp),
                 )
             }
             DelayBadge(delay, tested = item.testedAt > 0)
