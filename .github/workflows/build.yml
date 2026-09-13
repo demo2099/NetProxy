@@ -1,7 +1,7 @@
 # 编译 APK 并发布到 GitHub Releases（不需要打 tag）。
-# 手动触发（workflow_dispatch）时按 version.properties 的 versionName 建 tag（如 v0.5.3）
-# 并把产物传到对应 Release；重复运行会覆盖同一个 Release 的 APK，不会刷屏。
-# push 到 main 只编译、不发 Release（避免每次提交都建 release）。
+# 按 version.properties 的 versionName 建 tag（如 v0.5.3）并把产物传到对应 Release。
+# push 到 main 和手动触发都会发版（手动触发可用 publish 输入关掉）。
+# tag 跟着版本号走，所以重复构建只会覆盖同一个 Release 的 APK，不会每次提交刷一个新 Release。
 #
 # 每次构建出两套产物（Gradle product flavor，见 app/build.gradle.kts 的 flavorDimensions "cores"）：
 #   slim = 仅 sing-box 内核，体积最小
@@ -212,10 +212,12 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      # 只有手动触发且 publish=true 时才发 Release。
-      # 同一个 tag 重复运行 = 覆盖该 Release 的 APK（不会产生新 Release）。
+      # push 到 main 也会发版；手动触发时受 publish 输入控制（默认 true）。
+      # tag 取自 version.properties 的 versionName，所以重复运行只会覆盖同一个
+      # Release 的 APK。想改成"只有手动触发才发版"，把下面的 if 换成：
+      #   github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true'
       - name: Publish to GitHub Releases
-        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true' }}
+        if: ${{ github.event_name == 'push' || github.event.inputs.publish == 'true' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
