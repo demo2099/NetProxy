@@ -68,8 +68,16 @@ class MihomoCore(
     }
 
     override suspend fun applyConfig(config: String, overrides: CoreOverrides) {
+        // per-app lives in the VPN builder, NOT in the yaml — a hot reload
+        // can't apply it; detect the change and fall through to a full
+        // respawn (which re-establishes the tun with the new app list)
+        val perAppChanged = lastOverrides?.let {
+            it.perAppEnabled != overrides.perAppEnabled ||
+                it.perAppInclude != overrides.perAppInclude ||
+                it.perAppPackages != overrides.perAppPackages
+        } ?: false
         lastOverrides = overrides
-        if (sidecar?.running == true) {
+        if (sidecar?.running == true && !perAppChanged) {
             // hot reload: rewrite the file, then ask mihomo to re-read it
             configFile.writeText(stripTun(config))
             if (api.reload(configFile.absolutePath)) {

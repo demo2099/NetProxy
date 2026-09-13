@@ -160,13 +160,26 @@ class PerAppProxyViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     /**
-     * Persisted already; if the core is running, rebuild OverrideOptions via
-     * serviceReload (BoxService reads Settings on each startOrReloadService).
+     * Persisted already; hot-apply to the RUNNING core per kind. sing-box
+     * rebuilds OverrideOptions via serviceReload; the sidecar cores carry
+     * per-app in the VPN builder, which their applyConfig re-establishes
+     * (mihomo force-respawns on per-app changes, Xray always respawns).
      */
     private fun apply() {
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching {
-                CommandTarget.standaloneClient().serviceReload()
+            when (com.interstellar.proxy.data.Settings.coreKind) {
+                com.interstellar.proxy.core.CoreKind.SINGBOX ->
+                    runCatching { CommandTarget.standaloneClient().serviceReload() }
+
+                com.interstellar.proxy.core.CoreKind.MIHOMO ->
+                    runCatching {
+                        com.interstellar.proxy.core.MihomoCore.Holder.instance?.refreshFromConfigStore()
+                    }
+
+                com.interstellar.proxy.core.CoreKind.XRAY ->
+                    runCatching {
+                        com.interstellar.proxy.core.XrayCore.Holder.instance?.restartFromConfigStore()
+                    }
             }
         }
     }
