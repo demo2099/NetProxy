@@ -343,7 +343,13 @@ object ConfigBuilder {
                 put("server", node.server)
                 put("server_port", node.port)
                 put("uuid", node.uuid ?: "")
-                node.flow?.let { put("flow", it) }
+                // sing-box accepts only unset or "xtls-rprx-vision" here. Xray's legacy
+                // "-udp443" variant must be stripped, and any other value is dropped
+                // rather than emitted — one bad value fails the ENTIRE config with
+                // "unsupported flow", which takes every node's speed test down with it.
+                node.flow?.trim()?.lowercase()?.removeSuffix("-udp443")
+                    ?.takeIf { it == "xtls-rprx-vision" }
+                    ?.let { put("flow", it) }
                 buildTls(this, node)
                 buildTransport(this, node)
             }
@@ -435,11 +441,8 @@ object ConfigBuilder {
                 put("server", node.server)
                 put("server_port", node.port)
                 node.password?.let { put("password", it) }
-                putJsonObject("tls") {
-                    put("enabled", true)
-                    node.sni?.let { put("server_name", it) } ?: put("server_name", node.server)
-                    put("insecure", node.insecure ?: false)
-                }
+                // shared emitter so uTLS/alpn survive the round-trip
+                buildTls(this, node)
             }
 
             NodeType.SSH -> {

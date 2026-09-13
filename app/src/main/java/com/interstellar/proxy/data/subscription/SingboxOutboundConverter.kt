@@ -112,10 +112,7 @@ object SingboxOutboundConverter {
 
             NodeType.ANYTLS -> node.copy(
                 password = outbound.str("password"),
-                sni = outbound.obj("tls")?.str("server_name"),
-                insecure = outbound.obj("tls")?.bool("insecure"),
-                tls = true,
-            )
+            ).withTlsAndTransport(outbound, defaultTls = true)
 
             else -> null
         }
@@ -128,9 +125,11 @@ object SingboxOutboundConverter {
             sni = tls?.str("server_name"),
             alpn = tls?.strList("alpn"),
             insecure = tls?.bool("insecure"),
-            fingerprint = tls?.str("utls")?.let { utls ->
-                (utls as? JsonObject)?.str("fingerprint") ?: (utls as? JsonPrimitive)?.content
-            },
+            // sing-box writes uTLS as an object ({"enabled":true,"fingerprint":"chrome"});
+            // share links use a bare string ("utls":"chrome"). Support both.
+            fingerprint = tls?.obj("utls")?.let { utls ->
+                if (utls.bool("enabled") == false) null else utls.str("fingerprint")
+            } ?: tls?.str("utls"),
             reality = tls?.obj("reality")?.let { reality ->
                 ProxyNode.RealityParams(
                     publicKey = reality.str("public_key") ?: "",

@@ -47,6 +47,10 @@ fun JsonElement?.arr(key: String): JsonArray? = this?.let { el ->
 
 fun JsonElement?.str(key: String): String? {
     val el = (this as? JsonObject)?.get(key) ?: return null
+    // A JSON `null` is a JsonPrimitive whose content is the literal text "null",
+    // so it would otherwise leak through as a real string. That is fatal for
+    // sing-box: `"flow": null` -> "null" -> rejected with "unsupported flow: null".
+    if (el is JsonNull) return null
     val primitive = el as? JsonPrimitive ?: return null
     if (primitive.isString) return primitive.content
     return primitive.content.ifBlank { null }
