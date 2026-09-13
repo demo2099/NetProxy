@@ -239,6 +239,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _addingSub = MutableStateFlow(false)
     val addingSub: StateFlow<Boolean> = _addingSub
 
+    private var addSubJob: kotlinx.coroutines.Job? = null
+
+    /** Abort an in-flight subscription import (dialog 取消). */
+    fun cancelAddSubscription() {
+        addSubJob?.cancel()
+        addSubJob = null
+        _addingSub.value = false
+        _message.value = "已取消导入"
+    }
+
     /** True while any subscription refresh triggered by pull-to-refresh runs. */
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing
@@ -1067,7 +1077,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun addSubscriptionFromUrl(name: String, url: String) {
-        viewModelScope.launch(Dispatchers.IO) {
+        addSubJob = viewModelScope.launch(Dispatchers.IO) {
             _busy.value = true
             _addingSub.value = true
             try {
@@ -1078,9 +1088,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     result.body,
                     result,
                 )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
-                _message.value = "下载失败: ${e.message}"
+                _message.value = "下载失败: ${e.message} · 订阅域名可能无法直连, 建议开启代理后重试"
             } finally {
+                addSubJob = null
                 _busy.value = false
                 _addingSub.value = false
             }

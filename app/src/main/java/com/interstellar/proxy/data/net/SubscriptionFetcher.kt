@@ -19,21 +19,32 @@ object SubscriptionFetcher {
     private const val MIXED_PORT = 2080
 
     private fun directClient(): OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.SECONDS)
         .followRedirects(true)
         .build()
 
     private fun proxiedClient(): OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.SECONDS)
         .followRedirects(true)
         .proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", MIXED_PORT)))
         .build()
 
-    /** The command socket exists exactly while the core runs. */
-    private fun coreRunning(): Boolean =
-        File(InterstellarApplication.application.filesDir, "command.sock").exists()
+    /**
+     * Per-core liveness (same split as NetProbe): sing-box owns the command
+     * socket, sidecar cores expose their Holder handles.
+     */
+    private fun coreRunning(): Boolean = when (com.interstellar.proxy.data.Settings.coreKind) {
+        com.interstellar.proxy.core.CoreKind.SINGBOX ->
+            File(InterstellarApplication.application.filesDir, "command.sock").exists()
+
+        com.interstellar.proxy.core.CoreKind.MIHOMO ->
+            com.interstellar.proxy.core.MihomoCore.Holder.instance != null
+
+        com.interstellar.proxy.core.CoreKind.XRAY ->
+            com.interstellar.proxy.core.XrayCore.Holder.instance != null
+    }
 
     data class FetchResult(
         val body: String,
@@ -45,7 +56,7 @@ object SubscriptionFetcher {
         val viaProxy: Boolean = false,
     )
 
-    fun fetch(url: String): FetchResult {
+    suspend fun fetch(url: String): FetchResult {
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", USER_AGENT)
@@ -54,32 +65,52 @@ object SubscriptionFetcher {
         val throughProxy = coreRunning()
         if (throughProxy) {
             try {
-                return execute(proxiedClient(), request, viaProxy = true)
+                return executeCancellable(proxiedClient(), request, viaProxy = true)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // proxy path failed (node down / core stopping) — retry direct
             }
         }
-        return execute(directClient(), request, viaProxy = false)
+        return executeCancellable(directClient(), request, viaProxy = false)
     }
 
-    private fun execute(client: OkHttpClient, request: Request, viaProxy: Boolean): FetchResult {
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) error("HTTP ${response.code}")
-            val body = response.body!!.string()
-            val info = response.header("subscription-userinfo")
-                ?.let { parseSubscriptionUserinfo(it) }
-            val name = response.header("Content-Disposition")
-                ?.let { CONTENT_DISPOSITION.find(it)?.groupValues?.get(1) }
-            return FetchResult(
-                body = body,
-                uploadBytes = info?.get("upload") ?: 0,
-                downloadBytes = info?.get("download") ?: 0,
-                totalBytes = info?.get("total") ?: 0,
-                expireSeconds = info?.get("expire") ?: 0,
-                suggestedName = name,
-                viaProxy = viaProxy,
-            )
-        }
+    /** Enqueue + invokeOnCancellation so the dialog's 取消 aborts the socket. */
+    private suspend fun executeCancellable(
+        client: OkHttpClient,
+        request: Request,
+        viaProxy: Boolean,
+    ): FetchResult = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+        val call = client.newCall(request)
+        cont.invokeOnCancellation { call.cancel() }
+        call.enqueue(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
+                if (cont.isActive) cont.resumeWith(kotlin.Result.failure(e))
+            }
+
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                val parsed = runCatching {
+                    response.use {
+                        if (!it.isSuccessful) error("HTTP ${it.code}")
+                        val body = it.body!!.string()
+                        val info = it.header("subscription-userinfo")
+                            ?.let { h -> parseSubscriptionUserinfo(h) }
+                        val name = it.header("Content-Disposition")
+                            ?.let { h -> CONTENT_DISPOSITION.find(h)?.groupValues?.get(1) }
+                        FetchResult(
+                            body = body,
+                            uploadBytes = info?.get("upload") ?: 0,
+                            downloadBytes = info?.get("download") ?: 0,
+                            totalBytes = info?.get("total") ?: 0,
+                            expireSeconds = info?.get("expire") ?: 0,
+                            suggestedName = name,
+                            viaProxy = viaProxy,
+                        )
+                    }
+                }
+                if (cont.isActive) cont.resumeWith(parsed)
+            }
+        })
     }
 
     // upload=123; download=456; total=789; expire=1750000000

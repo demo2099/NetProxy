@@ -34,6 +34,7 @@ fun AddSubscriptionDialog(
     onAddUrl: (name: String, url: String) -> Unit,
     onAddText: (name: String, text: String) -> Unit,
     loading: Boolean = false,
+    onCancel: () -> Unit = {},
 ) {
     val colors = LocalInterstellarColors.current
     var name by remember { mutableStateOf("") }
@@ -141,6 +142,8 @@ fun AddSubscriptionDialog(
                         strokeWidth = 2.dp,
                         color = colors.primary,
                     )
+                    Spacer(Modifier.width(10.dp))
+                    ActionChip(text = "取消", danger = true) { onCancel() }
                 } else {
                     ActionChip(text = "取消") { onDismiss() }
                     Spacer(Modifier.width(10.dp))

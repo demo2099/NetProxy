@@ -242,6 +242,7 @@ fun SubscriptionsPage(viewModel: AppViewModel) {
         }
         AddSubscriptionDialog(
             loading = adding,
+            onCancel = { viewModel.cancelAddSubscription() },
             onDismiss = { showAdd = false },
             onAddUrl = { name, url ->
                 viewModel.addSubscriptionFromUrl(name, url)
