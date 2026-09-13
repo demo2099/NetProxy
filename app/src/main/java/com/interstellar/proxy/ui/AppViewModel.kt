@@ -1145,10 +1145,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 if (Settings.selectedOutboundTag.isBlank()) {
                     Settings.selectedOutboundTag = com.interstellar.proxy.data.config.ConfigBuilder.AUTO_TAG
                 }
-                // a freshly added subscription joins the mix pool right away
-                if (Settings.mixEnabled && sub.id !in Settings.mixSubscriptionIds) {
-                    Settings.mixSubscriptionIds = Settings.mixSubscriptionIds + sub.id
-                }
+                // NOT auto-checked into the mix pool: the user ticks it in the
+                // subscription list (toggleMixSubscription → applyPoolChange
+                // regenerates and the node list syncs from the state flow)
                 _message.value = "已导入 ${parsed.nodes.size} 个节点"
             }
 
