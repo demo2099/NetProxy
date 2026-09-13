@@ -241,11 +241,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private var addSubJob: kotlinx.coroutines.Job? = null
 
+    /** Last import failure, surfaced INSIDE the add dialog (modal covers page toasts). */
+    private val _addSubError = MutableStateFlow<String?>(null)
+    val addSubError: StateFlow<String?> = _addSubError
+
     /** Abort an in-flight subscription import (dialog 取消). */
     fun cancelAddSubscription() {
         addSubJob?.cancel()
         addSubJob = null
         _addingSub.value = false
+        _addSubError.value = null
         _message.value = "已取消导入"
     }
 
@@ -1080,6 +1085,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         addSubJob = viewModelScope.launch(Dispatchers.IO) {
             _busy.value = true
             _addingSub.value = true
+            _addSubError.value = null
             try {
                 val result = SubscriptionFetcher.fetch(url)
                 importContent(
@@ -1091,7 +1097,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _message.value = "下载失败: ${e.message} · 订阅域名可能无法直连, 建议开启代理后重试"
+                val msg = "下载失败: ${e.message} · 订阅域名可能无法直连, 建议开启代理后重试"
+                _message.value = msg
+                _addSubError.value = msg
             } finally {
                 addSubJob = null
                 _busy.value = false
@@ -1103,6 +1111,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun addSubscriptionFromText(name: String, text: String) {
         viewModelScope.launch(Dispatchers.IO) {
             _addingSub.value = true
+            _addSubError.value = null
             try {
                 importContent(name.ifBlank { "本地订阅" }, null, text, null)
             } finally {
@@ -1145,6 +1154,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
             SubscriptionParser.Result.Empty -> {
                 _message.value = "无法识别的订阅内容"
+                _addSubError.value = "无法识别的订阅内容"
             }
         }
         _subscriptions.value = SubscriptionRepository.subscriptions.toList()

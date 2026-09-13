@@ -35,6 +35,7 @@ fun AddSubscriptionDialog(
     onAddText: (name: String, text: String) -> Unit,
     loading: Boolean = false,
     onCancel: () -> Unit = {},
+    error: String? = null,
 ) {
     val colors = LocalInterstellarColors.current
     var name by remember { mutableStateOf("") }
@@ -123,6 +124,19 @@ fun AddSubscriptionDialog(
             }
 
             Spacer(Modifier.height(16.dp))
+
+            // modal dialogs cover page-level toasts — import failures must
+            // be readable in-place
+            if (!loading && error != null) {
+                Text(
+                    error,
+                    color = colors.danger,
+                    fontSize = 12.sp,
+                    maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(bottom = 10.dp),
+                )
+            }
 
             val enabled = if (mode == "url") url.isNotBlank() else text.isNotBlank()
             Row(

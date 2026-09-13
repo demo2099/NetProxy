@@ -232,6 +232,7 @@ fun SubscriptionsPage(viewModel: AppViewModel) {
 
     if (showAdd) {
         val adding by viewModel.addingSub.collectAsState()
+        val addError by viewModel.addSubError.collectAsState()
         // close the dialog when the import lands; keep it open on failure so
         // the typed URL survives for a retry
         val countAtOpen = remember { viewModel.subscriptions.value.size }
@@ -243,6 +244,7 @@ fun SubscriptionsPage(viewModel: AppViewModel) {
         AddSubscriptionDialog(
             loading = adding,
             onCancel = { viewModel.cancelAddSubscription() },
+            error = addError,
             onDismiss = { showAdd = false },
             onAddUrl = { name, url ->
                 viewModel.addSubscriptionFromUrl(name, url)
