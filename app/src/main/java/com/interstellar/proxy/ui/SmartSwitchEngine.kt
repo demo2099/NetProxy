@@ -2,6 +2,7 @@ package com.interstellar.proxy.ui
 
 import com.interstellar.proxy.InterstellarApplication
 import com.interstellar.proxy.core.AppLog
+import com.interstellar.proxy.core.DirectPing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -25,8 +26,8 @@ import java.util.concurrent.atomic.AtomicInteger
  *  1. patrol: real-latency probe of the CURRENT exit (204 through the local
  *     inbound). Healthy ≤ GOOD_MS → just refresh the cache entry.
  *  2. unhealthy → reselection round:
- *     a. fast TCP ping over the whole pool (bounded, concurrent) →
- *        candidates with ping < PING_MAX_MS
+ *     a. fast TCP ping over the whole pool (bounded, concurrent, off-tunnel
+ *        via DirectPing) → candidates with ping < PING_MAX_MS
  *     b. real-latency data: kernels with a control API get a group url-test
  *        snapshot; otherwise (Xray) candidates are verified by switching
  *        and probing (bounded attempts)
@@ -291,19 +292,17 @@ class SmartSwitchEngine(
         nodes: List<com.interstellar.proxy.data.model.ProxyNode>,
         tags: List<String>,
     ): List<Int> = coroutineScope {
+        // the engine only runs while connected — a plain connect would
+        // handshake with our own tun stack (~3-4ms) for every node
+        DirectPing.warmup(1_500)
         val results = ConcurrentHashMap<Int, Int>()
         val semaphore = kotlinx.coroutines.sync.Semaphore(16)
         val done = AtomicInteger()
         nodes.forEachIndexed { idx, node ->
             launch {
                 semaphore.withPermit {
-                    val startedAt = System.currentTimeMillis()
                     results[idx] = runCatching {
-                        java.net.Socket().use { s ->
-                            s.tcpNoDelay = true
-                            s.connect(java.net.InetSocketAddress(node.server, node.port), PING_TIMEOUT_MS)
-                        }
-                        (System.currentTimeMillis() - startedAt).toInt()
+                        DirectPing.tcpConnect(node.server, node.port, PING_TIMEOUT_MS)
                             .coerceAtMost(PING_TIMEOUT_MS - 1)
                     }.getOrDefault(PING_TIMEOUT_MS)
                     done.incrementAndGet()

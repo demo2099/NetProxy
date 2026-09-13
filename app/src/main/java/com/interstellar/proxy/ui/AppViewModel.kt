@@ -27,6 +27,7 @@ import com.interstellar.proxy.core.ClashApiClient
 import com.interstellar.proxy.core.CoreGroup
 import com.interstellar.proxy.core.CoreGroupItem
 import com.interstellar.proxy.core.CoreKind
+import com.interstellar.proxy.core.DirectPing
 import com.interstellar.proxy.core.MihomoCore
 import com.interstellar.proxy.utils.CommandClient
 import com.interstellar.proxy.utils.CommandTarget
@@ -204,6 +205,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** Epoch seconds when the current url-test run started (0 = idle). */
     @Volatile private var testStartEpoch = 0L
 
+    /** Serializes kernel url-test runs (manual button vs smart engine). */
+    private val kernelUrlTestMutex = kotlinx.coroutines.sync.Mutex()
+
+    /** True while the in-flight kernel url-test run belongs to the manual button. */
+    @Volatile private var kernelTestManual = false
+
     /** sing-box's per-node url-test HTTP timeout (constant.TCPTimeout, hardcoded in the kernel). */
     private val PER_NODE_TEST_TIMEOUT_MS = 15_000L
 
@@ -287,11 +294,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun requestKernelGroupDelays(): Map<String, Int>? {
         return when (Settings.coreKind) {
             CoreKind.SINGBOX -> {
-                val ok = runCatching {
-                    CommandTarget.standaloneClient().urlTest(ConfigBuilder.AUTO_TAG)
-                }.isSuccess
-                if (!ok) return null
-                awaitUrlTestSettled()
+                if (!runKernelUrlTest(manual = false)) return null
                 _delays.value
             }
 
@@ -471,24 +474,29 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     map[item.tag] = item.urlTestDelay
                 }
                 _delays.value = map
-                // url-test progress: count results stamped after this run started
+                // url-test progress: count results stamped after this run
+                // started. Only the manual run owns the UI state — smart
+                // runs settle silently underneath.
                 if (testStartEpoch > 0) {
                     val done = outbounds.count { it.urlTestTime >= testStartEpoch }
                     val prevTotal = _testProgress.value?.second ?: 0
                     val total = maxOf(prevTotal, outbounds.size)
                     if (total > 0) {
                         if (done >= total) {
-                            _testProgress.value = null
                             testStartEpoch = 0
-                            _testing.value = false
-                        } else {
+                            if (kernelTestManual) {
+                                _testProgress.value = null
+                                _testing.value = false
+                            }
+                        } else if (kernelTestManual) {
                             _testProgress.value = done.coerceAtMost(total) to total
                         }
                     }
                 }
-                // the first outbounds snapshot arrives before the url-test
-                // finishes; don't kill the spinner while probing
-                if (!probing) _testing.value = false
+                // NB: snapshots can arrive at any moment (smart rounds,
+                // delayed pushes) and must never kill an in-flight run —
+                // the settle branch above and the callers' finally own the
+                // testing state.
             }
 
             override fun initializeClashMode(modeList: List<String>, currentMode: String) {
@@ -995,7 +1003,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun urlTest(groupTag: String) {
         if (_testing.value) return
         _testing.value = true
-        testStartEpoch = System.currentTimeMillis() / 1000
         _testProgress.value = 0 to urlTestTotal()
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -1023,13 +1030,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                             // kernel's per-item pass — that's the "大量未测"
                             // at the bottom. Mirrors the mihomo path
                             // (groupDelay(AUTO_TAG)) and the disconnected path.
-                            val ok = runCatching {
-                                CommandTarget.standaloneClient().urlTest(ConfigBuilder.AUTO_TAG)
-                            }.isSuccess
-                            // completion is reported by the outbounds stream
-                            // (updateOutbounds counts done/total and clears the
-                            // epoch); settle-aware wait with a hard cap
-                            if (ok) awaitUrlTestSettled()
+                            if (!runKernelUrlTest(manual = true)) {
+                                _message.value = "测速失败: 命令发送失败"
+                            }
                         }
                     }
                     if (Settings.coreKind == CoreKind.MIHOMO) delay(12_000)
@@ -1073,6 +1076,38 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             delay(500)
         }
     }
+
+    /**
+     * One kernel url-test run over the AUTO group, serialized between the
+     * manual button and the smart engine: both send the same command, and
+     * without the mutex one run's stream pushes would settle the other's
+     * wait (or let a stray push kill the manual spinner mid-run). Marks the
+     * run epoch, sends the command, then waits for the outbounds stream to
+     * report every member stamped after the epoch — bounded by the kernel's
+     * per-node timeout plus margin. False = the command could not be sent.
+     */
+    private suspend fun runKernelUrlTest(manual: Boolean): Boolean =
+        kernelUrlTestMutex.withLock {
+            kernelTestManual = manual
+            testStartEpoch = System.currentTimeMillis() / 1000
+            if (manual) {
+                // a colliding run's settle may have flashed these off while
+                // this caller was waiting on the mutex
+                _testing.value = true
+                _testProgress.value = 0 to urlTestTotal()
+            }
+            val ok = runCatching {
+                CommandTarget.standaloneClient().urlTest(ConfigBuilder.AUTO_TAG)
+            }.isSuccess
+            if (!ok) {
+                testStartEpoch = 0
+                return@withLock false
+            }
+            val deadline = System.currentTimeMillis() + PER_NODE_TEST_TIMEOUT_MS + 10_000
+            while (testStartEpoch > 0 && System.currentTimeMillis() < deadline) delay(500)
+            testStartEpoch = 0 // cap fallback; callers' finally owns the UI state
+            true
+        }
 
     /**
      * Spin up the core without TUN so url-test can run while the UI stays
@@ -1129,6 +1164,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     if (i > 0 && i % 10 == 0) commandClient.connect()
                 }
                 if (!connected) throw IllegalStateException("测速服务启动超时")
+                kernelTestManual = true // manual run: progress + settle own the UI state
+                testStartEpoch = System.currentTimeMillis() / 1000
                 val ok = runCatching {
                     CommandTarget.standaloneClient().urlTest(ConfigBuilder.AUTO_TAG)
                 }.isSuccess
@@ -1168,13 +1205,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
      * delay-sorted list re-orders immediately. Failed connects are marked
      * with the TIMEOUT sentinel and classified into [lastPingReport].
      * UDP-only protocols (hysteria2/tuic/wireguard/quic) can't be TCP-pinged
-     * and are skipped with a note.
+     * and are skipped with a note. Sockets bypass our own tun via
+     * [DirectPing] — a plain connect would handshake with the local tun
+     * stack (~3-4ms) while the VPN is up.
      */
     fun tcpPingPool() {
         if (_pinging.value) return
         _pinging.value = true
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                // while connected, the tracker decides between a real
+                // physical-network ping and a meaningless tun-loop ping
+                DirectPing.warmup(if (_status.value == Status.Started) 1_500 else 0)
                 val pool = SubscriptionRepository.poolOf(
                     _subscriptions.value,
                     _activeSubscriptionId.value,
@@ -1207,20 +1249,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     pairs.forEach { (node, tag) ->
                         launch {
                             semaphore.withPermit {
-                                val startedAt = System.currentTimeMillis()
                                 val outcome = runCatching {
-                                    java.net.Socket().use { socket ->
-                                        socket.tcpNoDelay = true
-                                        socket.connect(
-                                            java.net.InetSocketAddress(node.server, node.port),
-                                            3000,
-                                        )
-                                    }
+                                    DirectPing.tcpConnect(node.server, node.port, 3000)
                                 }
-                                val ms = (System.currentTimeMillis() - startedAt).toInt()
                                 val value = when {
-                                    outcome.exceptionOrNull() != null || ms >= 3000 -> TIMEOUT_DELAY
-                                    else -> ms.coerceAtLeast(1)
+                                    outcome.exceptionOrNull() != null -> TIMEOUT_DELAY
+                                    else -> outcome.getOrDefault(0).coerceAtLeast(1)
                                 }
                                 if (value == TIMEOUT_DELAY) {
                                     failed.incrementAndGet()

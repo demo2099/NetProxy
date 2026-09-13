@@ -66,7 +66,7 @@ object MihomoConfigBuilder {
                     put("override-destination", true)
                 },
             )
-            put("dns", buildDns(options))
+            put("dns", buildDns(options, usable))
             put("proxies", buildProxies(usable, tags))
             put("proxy-groups", buildGroups(tags, regionGroups, customGroups))
             put("rules", buildRules(nodes, options, customGroups))
@@ -82,12 +82,27 @@ object MihomoConfigBuilder {
 
     // ---- dns ----
 
-    private fun buildDns(options: ConfigBuilder.BuildOptions) = Yaml.map {
+    private fun buildDns(options: ConfigBuilder.BuildOptions, nodes: List<ProxyNode>) = Yaml.map {
         put("enable", true)
         put("ipv6", false)
         put("enhanced-mode", "fake-ip")
         put("fake-ip-range", "198.18.0.1/16")
-        put("fake-ip-filter", listOf("+.lan", "+.local", "dns.msftncsi.com", "www.msftncsi.com"))
+        put(
+            "fake-ip-filter",
+            buildList {
+                add("+.lan")
+                add("+.local")
+                add("dns.msftncsi.com")
+                add("www.msftncsi.com")
+                // node server domains must resolve to real IPs even through
+                // the tunnel — a fake 198.18.x.x answer makes the app's own
+                // TCP pings connect into its own tun (instant local handshake)
+                nodes.map { it.server }.filter { it.isDomainName() }.forEach { domain ->
+                    add(domain)
+                    add("+.$domain")
+                }
+            }.distinct(),
+        )
         put("default-nameserver", listOf("223.5.5.5"))
         // node server domains MUST resolve directly (mihomo's escape hatch for
         // the "resolve-via-proxy to reach the proxy" loop)
@@ -116,6 +131,10 @@ object MihomoConfigBuilder {
             )
         }
     }
+
+    /** DNS-resolvable server address — not an IPv4/IPv6 literal. */
+    private fun String.isDomainName(): Boolean =
+        !contains(':') && !matches(Regex("""^\d{1,3}(\.\d{1,3}){3}$"""))
 
     // ---- proxies ----
 
