@@ -341,7 +341,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 SubscriptionRepository.regenerateActiveConfig()
             }
             smartEngine.start()
-            _message.value = "智能模式已开启"
         }
     }
 
