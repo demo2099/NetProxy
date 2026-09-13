@@ -150,7 +150,7 @@ object CommonProxyApps {
         "coursera", "udemy", "paypal", "ebay", "vimeo", "outlook", "skype",
         "flickr", "patreon", "medium", "quora", "canva", "figma", "replit",
         "huggingface", "notebooklm", "bard", "tiktok", "disney+",
-        "prime video", "hbo", "谷歌", "推特", "电报",
+        "prime video", "hbo", "loki.saver", "loki saver", "谷歌", "推特", "电报",
     )
 
     private val excludeContains = listOf(
