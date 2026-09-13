@@ -130,7 +130,8 @@ fun NodesPage(viewModel: AppViewModel) {
         } else if (prevRunning) {
             // just finished — snapshot stats over the current pool tags
             val tags = ConfigBuilder.tagsFor(storedNodes)
-            testSummary = computeNodesTestSummary(lastMode, tags, delays)
+            val pingReport = if (lastMode == "Ping") viewModel.lastPingReport else null
+            testSummary = computeNodesTestSummary(lastMode, tags, delays, pingReport)
         }
         prevRunning = testRunning
     }
@@ -483,6 +484,11 @@ private data class NodesTestSummary(
     val maxMs: Int,
     val p50: Int,
     val p95: Int,
+    val failed: Int = 0,
+    /** Aggregated failure reasons ("超时 12 · 连接被拒 3"), or a generic note for kernel tests. */
+    val failNote: String? = null,
+    /** UDP-protocol nodes TCP ping can't cover (use url-test instead). */
+    val skippedUdp: Int = 0,
 )
 
 /** ok = tested with a real delay (sentinels and untested excluded). */
@@ -490,11 +496,23 @@ private fun computeNodesTestSummary(
     mode: String,
     tags: List<String>,
     delays: Map<String, Int>,
+    pingReport: com.interstellar.proxy.ui.AppViewModel.PingReport? = null,
 ): NodesTestSummary {
     val values = tags.mapNotNull { tag ->
         delays[tag]?.takeIf { it > 0 && it < 65_000 }
     }.sorted()
     fun pct(p: Double) = if (values.isEmpty()) 0 else values[((values.size - 1) * p).toInt()]
+    val skippedUdp = pingReport?.skippedUdp ?: 0
+    val failed = pingReport?.failed ?: (tags.size - values.size - 0).coerceAtLeast(0)
+    val failNote = when {
+        failed <= 0 -> null
+
+        pingReport != null && pingReport.reasons.isNotEmpty() ->
+            pingReport.reasons.entries.sortedByDescending { it.value }
+                .joinToString(" · ") { "${it.key} ${it.value}" }
+
+        else -> "超时或握手失败"
+    }
     return NodesTestSummary(
         mode = mode,
         total = tags.size,
@@ -503,6 +521,9 @@ private fun computeNodesTestSummary(
         maxMs = values.lastOrNull() ?: 0,
         p50 = pct(0.50),
         p95 = pct(0.95),
+        failed = failed,
+        failNote = failNote,
+        skippedUdp = skippedUdp,
     )
 }
 
@@ -567,7 +588,7 @@ private fun TestSummaryBar(
                 )
                 Spacer(Modifier.width(10.dp))
                 Text(
-                    "${summary.total} 节点 · 成功 ${summary.okCount}",
+                    "${summary.total} 节点 · 成功 ${summary.okCount} · 失败 ${summary.failed}",
                     color = colors.textSecondary,
                     fontSize = 12.sp,
                 )
@@ -582,12 +603,21 @@ private fun TestSummaryBar(
                     fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace,
                 )
-            } else {
+            }
+            if (summary.skippedUdp > 0) {
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "全部超时",
-                    color = colors.danger,
-                    fontSize = 12.sp,
+                    "已跳过 ${summary.skippedUdp} 个 UDP 协议节点 (hysteria2/tuic/wireguard 不支持 TCP Ping, 请用测速)",
+                    color = colors.warning,
+                    fontSize = 11.sp,
+                )
+            }
+            if (summary.failNote != null) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "失败原因: ${summary.failNote}",
+                    color = if (summary.okCount == 0) colors.danger else colors.textTertiary,
+                    fontSize = 11.sp,
                 )
             }
         }

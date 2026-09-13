@@ -1044,11 +1044,24 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Aggregated per-run ping outcome for the summary bar. */
+    data class PingReport(
+        val failed: Int,
+        val skippedUdp: Int,
+        val reasons: Map<String, Int>,
+    )
+
+    @Volatile
+    var lastPingReport: PingReport? = null
+        private set
+
     /**
      * Concurrent direct TCP ping over the current pool (satelite-style):
      * no core required, results stream into [delays] one by one so a
      * delay-sorted list re-orders immediately. Failed connects are marked
-     * with the TIMEOUT sentinel.
+     * with the TIMEOUT sentinel and classified into [lastPingReport].
+     * UDP-only protocols (hysteria2/tuic/wireguard/quic) can't be TCP-pinged
+     * and are skipped with a note.
      */
     fun tcpPingPool() {
         if (_pinging.value) return
@@ -1065,16 +1078,30 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     showToast("没有可测的节点", UiToast.Kind.Error)
                     return@launch
                 }
-                val tags = ConfigBuilder.tagsFor(pool)
-                _pingProgress.value = 0 to pool.size
+                val udpOnly = setOf(
+                    com.interstellar.proxy.data.model.NodeType.HYSTERIA2,
+                    com.interstellar.proxy.data.model.NodeType.TUIC,
+                    com.interstellar.proxy.data.model.NodeType.WIREGUARD,
+                )
+                val pairs = pool.zip(ConfigBuilder.tagsFor(pool))
+                    .filter { (node, _) -> node.type !in udpOnly && node.network != "quic" }
+                val skippedUdp = pool.size - pairs.size
+                if (pairs.isEmpty()) {
+                    lastPingReport = PingReport(0, skippedUdp, emptyMap())
+                    showToast("全部节点为 UDP 协议, 不支持 TCP Ping, 请用测速", UiToast.Kind.Error)
+                    return@launch
+                }
+                _pingProgress.value = 0 to pairs.size
                 val done = java.util.concurrent.atomic.AtomicInteger()
+                val failed = java.util.concurrent.atomic.AtomicInteger()
+                val reasons = java.util.concurrent.ConcurrentHashMap<String, Int>()
                 val semaphore = kotlinx.coroutines.sync.Semaphore(12)
                 kotlinx.coroutines.coroutineScope {
-                    pool.zip(tags).forEach { (node, tag) ->
+                    pairs.forEach { (node, tag) ->
                         launch {
                             semaphore.withPermit {
                                 val startedAt = System.currentTimeMillis()
-                                val ok = runCatching {
+                                val outcome = runCatching {
                                     java.net.Socket().use { socket ->
                                         socket.tcpNoDelay = true
                                         socket.connect(
@@ -1082,20 +1109,33 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                                             3000,
                                         )
                                     }
-                                }.isSuccess
+                                }
                                 val ms = (System.currentTimeMillis() - startedAt).toInt()
                                 val value = when {
-                                    !ok || ms >= 3000 -> TIMEOUT_DELAY
+                                    outcome.exceptionOrNull() != null || ms >= 3000 -> TIMEOUT_DELAY
                                     else -> ms.coerceAtLeast(1)
+                                }
+                                if (value == TIMEOUT_DELAY) {
+                                    failed.incrementAndGet()
+                                    val reason = when (val e = outcome.exceptionOrNull()) {
+                                        null -> "超时"
+                                        is java.net.SocketTimeoutException -> "超时"
+                                        is java.net.ConnectException -> "连接被拒"
+                                        is java.net.UnknownHostException -> "域名解析失败"
+                                        else -> e.message?.take(18)?.takeIf { it.isNotBlank() }
+                                            ?: e.javaClass.simpleName
+                                    }
+                                    reasons.merge(reason, 1, Int::plus)
                                 }
                                 delaysMutex.withLock {
                                     _delays.value = _delays.value.toMutableMap().also { it[tag] = value }
                                 }
-                                _pingProgress.value = done.incrementAndGet() to pool.size
+                                _pingProgress.value = done.incrementAndGet() to pairs.size
                             }
                         }
                     }
                 }
+                lastPingReport = PingReport(failed.get(), skippedUdp, reasons.toMap())
             } finally {
                 _pinging.value = false
                 _pingProgress.value = null
