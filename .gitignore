@@ -10,10 +10,12 @@ local.properties
 app/build
 build/
 
-# signing (never commit)
+# signing
+#   仓库根的 signing.properties = CI 从 secrets 还原出来的临时文件，不入库
+#   keystore/ 下的签名材料是**有意入库**的（零配置就能出正式签名包，见 keystore/README.md）
+/signing.properties
 interstellar.jks
 keystore.properties
-signing.properties
 
 # 112MB sing-box core — rebuild via `make lib_android` (see README)
 app/libs/libbox.aar

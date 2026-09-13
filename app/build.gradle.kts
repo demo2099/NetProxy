@@ -1,4 +1,5 @@
 import com.android.build.api.variant.FilterConfiguration
+import java.io.File
 import java.util.Properties
 
 plugins {
@@ -8,12 +9,20 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
-// signing.properties (gitignored) — release builds fall back to debug signing
-// when absent so the project still builds on fresh checkouts.
+// 签名材料，按优先级查找（只取第一个存在的）：
+//   1. signing.properties —— 本地手写 / CI 从 secrets 还原（gitignored）
+//   2. keystore/signing.properties —— 可选，随仓库分发，让 CI 不配 secrets
+//      也能用**同一个密钥**出正式签名包（覆盖安装的前提）
 val signingProps = Properties().apply {
-    val f = rootProject.file("signing.properties")
-    if (f.exists()) f.inputStream().use { load(it) }
+    listOf(rootProject.file("signing.properties"), rootProject.file("keystore/signing.properties"))
+        .firstOrNull { it.exists() }
+        ?.inputStream()?.use { load(it) }
 }
+
+/** 有可用签名材料 = 真正的正式签名（跨版本覆盖安装的前提）。 */
+val releaseStoreFile: File? = signingProps.getProperty("storeFile")
+    ?.let { rootProject.file(it) }
+    ?.takeIf { it.isFile }
 
 // version.properties — 全局唯一的版本定义处 (设置页与 CI 的 tag 校验都依赖它)
 val versionProps = Properties().apply {
@@ -34,11 +43,16 @@ android {
 
     signingConfigs {
         create("release") {
-            if (signingProps.getProperty("storeFile") != null) {
-                storeFile = rootProject.file(signingProps.getProperty("storeFile"))
+            val store = releaseStoreFile
+            if (store != null) {
+                storeFile = store
                 storePassword = signingProps.getProperty("storePassword")
                 keyAlias = signingProps.getProperty("keyAlias")
                 keyPassword = signingProps.getProperty("keyPassword")
+                // 必须显式写死：JDK 9+ 的 KeyStore 默认类型是 PKCS12，AGP 不指定
+                // 时用默认类型，跟 .jks 不匹配就会报
+                // "Keystore was tampered with, or password was incorrect"
+                storeType = signingProps.getProperty("storeType") ?: "JKS"
             }
         }
     }
@@ -48,15 +62,21 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            if (signingProps.getProperty("storeFile") != null) {
-                signingConfig = signingConfigs.getByName("release")
+            // 千万别留空：signingConfig 为 null 时 AGP 产出的是**未签名** APK，
+            // 装到手机上直接报「安装包未包含任何证书」。没有正式签名材料时退回
+            // debug 签名，至少保证产物能装（代价：签名随 CI 机器变化，不能覆盖
+            // 安装 —— 文件名会带 -debugsigned 提醒）。
+            signingConfig = if (releaseStoreFile != null) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
             }
         }
         // debug builds get their own applicationId so 地心游记 (debug) and
         // 星际穿越 (release) coexist on the same device
         debug {
             applicationIdSuffix = ".debug"
-            if (signingProps.getProperty("storeFile") != null) {
+            if (releaseStoreFile != null) {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
@@ -109,15 +129,18 @@ android {
 
 // APK 输出统一以 interstellar 开头：interstellar-<flavor>-<abi>-<buildType>.apk
 // 例如 interstellar-slim-arm64-v8a-release.apk / interstellar-full-universal-debug.apk
+// 没有正式签名材料时补 -debugsigned：AGP 本来会给未签名产物加 -unsigned，但下面这个
+// set() 会把名字整个覆盖掉 —— 一个装不上的包就会长得跟正常包一模一样（踩过）。
 androidComponents {
     onVariants { variant ->
         val flavor = variant.productFlavors.joinToString("-") { it.second }
+        val signTag = if (releaseStoreFile == null && variant.buildType == "release") "-debugsigned" else ""
         variant.outputs.forEach { output ->
             val abi = output.filters
                 .firstOrNull { it.filterType == FilterConfiguration.FilterType.ABI }
                 ?.identifier
             output.outputFileName.set(
-                "interstellar-${flavor}-${abi ?: "universal"}-${variant.buildType}.apk"
+                "interstellar-${flavor}-${abi ?: "universal"}-${variant.buildType}${signTag}.apk"
             )
         }
     }
