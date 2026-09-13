@@ -36,6 +36,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -112,6 +113,26 @@ fun NodesPage(viewModel: AppViewModel) {
             }
             ConfigBuilder.tagsFor(storedNodes).zip(names).toMap()
         }
+    }
+
+    // ── 底部测速/Ping 进度条与完成摘要 ──
+    val testProg by viewModel.testProgress.collectAsState()
+    val pingRunning by viewModel.pinging.collectAsState()
+    val pingProg by viewModel.pingProgress.collectAsState()
+    var testSummary by remember { mutableStateOf<NodesTestSummary?>(null) }
+    var prevRunning by remember { mutableStateOf(false) }
+    var lastMode by remember { mutableStateOf("测速") }
+    val testRunning = testing || pingRunning
+    LaunchedEffect(testRunning) {
+        if (testRunning) {
+            lastMode = if (pingRunning) "Ping" else "测速"
+            testSummary = null // a new run clears the old summary
+        } else if (prevRunning) {
+            // just finished — snapshot stats over the current pool tags
+            val tags = ConfigBuilder.tagsFor(storedNodes)
+            testSummary = computeNodesTestSummary(lastMode, tags, delays)
+        }
+        prevRunning = testRunning
     }
 
     Column(
@@ -268,11 +289,10 @@ fun NodesPage(viewModel: AppViewModel) {
                         }
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            testProgress?.let { "${it.first}/${it.second}" } ?: "测速中",
+                            "测速中",
                             color = colors.primary,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
-                            fontFamily = FontFamily.Monospace,
                         )
                     }
                 } else {
@@ -282,7 +302,6 @@ fun NodesPage(viewModel: AppViewModel) {
             Spacer(Modifier.width(8.dp))
             // 直连 TCP Ping：不依赖内核，即时并发，结果流式回填
             val pinging by viewModel.pinging.collectAsState()
-            val pingProgress by viewModel.pingProgress.collectAsState()
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(12.dp))
@@ -318,11 +337,10 @@ fun NodesPage(viewModel: AppViewModel) {
                         }
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            pingProgress?.let { "${it.first}/${it.second}" } ?: "Ping",
+                            "Ping中",
                             color = colors.accent,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
-                            fontFamily = FontFamily.Monospace,
                         )
                     }
                 } else {
@@ -437,10 +455,141 @@ fun NodesPage(viewModel: AppViewModel) {
                 }
             }
         }
+
+        // ── 底部进度条: 运行中显示 n/N, 完成后显示摘要, 点按消失 ──
+        if (testRunning || testSummary != null) {
+            Spacer(Modifier.height(8.dp))
+            TestSummaryBar(
+                running = testRunning,
+                mode = lastMode,
+                progress = if (pingRunning) pingProg else testProg,
+                summary = testSummary,
+                onDismiss = { testSummary = null },
+            )
+        }
     }
 
     detailItem?.let { item ->
         NodeDetailSheet(item = item, onDismiss = { detailItem = null })
+    }
+}
+
+/** Stats snapshot shown after a url-test / ping run finishes. */
+private data class NodesTestSummary(
+    val mode: String,
+    val total: Int,
+    val okCount: Int,
+    val minMs: Int,
+    val maxMs: Int,
+    val p50: Int,
+    val p95: Int,
+)
+
+/** ok = tested with a real delay (sentinels and untested excluded). */
+private fun computeNodesTestSummary(
+    mode: String,
+    tags: List<String>,
+    delays: Map<String, Int>,
+): NodesTestSummary {
+    val values = tags.mapNotNull { tag ->
+        delays[tag]?.takeIf { it > 0 && it < 65_000 }
+    }.sorted()
+    fun pct(p: Double) = if (values.isEmpty()) 0 else values[((values.size - 1) * p).toInt()]
+    return NodesTestSummary(
+        mode = mode,
+        total = tags.size,
+        okCount = values.size,
+        minMs = values.firstOrNull() ?: 0,
+        maxMs = values.lastOrNull() ?: 0,
+        p50 = pct(0.50),
+        p95 = pct(0.95),
+    )
+}
+
+@Composable
+private fun TestSummaryBar(
+    running: Boolean,
+    mode: String,
+    progress: Pair<Int, Int>?,
+    summary: NodesTestSummary?,
+    onDismiss: () -> Unit,
+) {
+    val colors = LocalInterstellarColors.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(colors.panelSolid)
+            .pressableClick { onDismiss() }
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        if (running) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "${mode}中",
+                    color = colors.text,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    progress?.let { "${it.first}/${it.second}" } ?: "…",
+                    color = colors.textTertiary,
+                    fontSize = 13.sp,
+                    fontFamily = FontFamily.Monospace,
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    "完成后展示统计",
+                    color = colors.textTertiary,
+                    fontSize = 10.sp,
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            val fraction = progress?.takeIf { it.second > 0 }?.let { it.first.toFloat() / it.second } ?: 0f
+            androidx.compose.material3.LinearProgressIndicator(
+                progress = { fraction },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp)),
+                color = colors.primary,
+                trackColor = colors.primaryMuted,
+            )
+        } else if (summary != null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "${summary.mode}完成",
+                    color = colors.primary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    "${summary.total} 节点 · 成功 ${summary.okCount}",
+                    color = colors.textSecondary,
+                    fontSize = 12.sp,
+                )
+                Spacer(Modifier.weight(1f))
+                Text("点按关闭", color = colors.textTertiary, fontSize = 10.sp)
+            }
+            if (summary.okCount > 0) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "最低 ${summary.minMs}ms · P50 ${summary.p50}ms · P95 ${summary.p95}ms · 最高 ${summary.maxMs}ms",
+                    color = colors.textTertiary,
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace,
+                )
+            } else {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "全部超时",
+                    color = colors.danger,
+                    fontSize = 12.sp,
+                )
+            }
+        }
     }
 }
 
