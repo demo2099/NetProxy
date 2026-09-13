@@ -6,7 +6,7 @@
 
 **星河漫漫， 穿越光年。**
 
-Android 7.0+ · v0.5.1 · Kotlin + Jetpack Compose
+Android 7.0+ · v0.5.2 · Kotlin + Jetpack Compose
 
 </div>
 
