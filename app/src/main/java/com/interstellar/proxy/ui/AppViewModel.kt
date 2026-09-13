@@ -272,7 +272,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     _mixSubscriptionIds.value,
                 )
             },
-            onAlert = { _message.value = it },
+            // 智能行为细节走 AppLog("smart") 在日志页呈现; 严重状态由首页 SmartStatusLine(state.alert) 呈现
             onStateChanged = { _smartState.value = it },
         )
     }

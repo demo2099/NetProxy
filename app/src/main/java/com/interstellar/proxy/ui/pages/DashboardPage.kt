@@ -95,7 +95,6 @@ fun DashboardPage(
     val groups by viewModel.groups.collectAsState()
     val delays by viewModel.delays.collectAsState()
     val busy by viewModel.busy.collectAsState()
-    val message by viewModel.message.collectAsState()
     val storedSelected by viewModel.selectedOutboundTag.collectAsState()
     val subscriptions by viewModel.subscriptions.collectAsState()
     val activeSubscriptionId by viewModel.activeSubscriptionId.collectAsState()
@@ -604,19 +603,7 @@ fun DashboardPage(
             }
 
 
-            Spacer(Modifier.height(4.dp))
-
-            if (message != null) {
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    message!!,
-                    color = colors.warning,
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(bottom = 12.dp),
-                )
-            } else {
-                Spacer(Modifier.height(20.dp))
-            }
+            Spacer(Modifier.height(24.dp))
         }
     }
 }

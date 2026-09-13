@@ -1,6 +1,7 @@
 package com.interstellar.proxy.ui
 
 import com.interstellar.proxy.InterstellarApplication
+import com.interstellar.proxy.core.AppLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -32,7 +33,7 @@ import java.util.concurrent.atomic.AtomicInteger
  *     c. pick the lowest real latency < REAL_MAX_MS; probe order follows the
  *        persisted delay cache (last round's results sort the next round)
  *  3. guard rails: switch cooldown, round-duration alert, thin-candidate
- *     alert, no-candidate alert — surfaced via [onAlert] and [state].
+ *     alert, no-candidate alert — surfaced via [state] and AppLog ("smart").
  *
  * The delay cache lives in filesDir/smart_cache.json and doubles as the
  * "上次延迟记录" for both ordering and the node-page display.
@@ -47,7 +48,6 @@ class SmartSwitchEngine(
     /** Hot-switch the core onto [tag] (API or restart). */
     private val applySwitch: suspend (tag: String) -> Boolean,
     private val pool: () -> List<com.interstellar.proxy.data.model.ProxyNode>,
-    private val onAlert: (String) -> Unit,
     private val onStateChanged: (SmartState) -> Unit,
 ) {
     data class SmartState(
@@ -106,6 +106,10 @@ class SmartSwitchEngine(
         if (started) return
         started = true
         loadCache()
+        AppLog.log(
+            "smart",
+            "引擎已启动: 巡检间隔 ${PATROL_INTERVAL_MS / 1000}s · 正常阈值 ${GOOD_MS}ms · 候选门槛 ping<${PING_MAX_MS}ms 实测<${REAL_MAX_MS}ms",
+        )
         kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
             delay(FIRST_PATROL_DELAY_MS)
             while (started) {
@@ -114,6 +118,7 @@ class SmartSwitchEngine(
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
                 } catch (e: Exception) {
+                    AppLog.log("smart", "巡检循环异常: ${e.message?.take(48) ?: e.javaClass.simpleName}")
                     state = state.copy(phase = "巡检异常: ${e.message?.take(24)}")
                 }
                 delay(PATROL_INTERVAL_MS)
@@ -122,7 +127,9 @@ class SmartSwitchEngine(
     }
 
     fun stop() {
+        if (!started) return
         started = false
+        AppLog.log("smart", "引擎已停止")
         state = state.copy(active = false, phase = "空闲")
     }
 
@@ -140,10 +147,14 @@ class SmartSwitchEngine(
         if (tag != null && real in 1..GOOD_MS) {
             record(tag, real)
             state = state.copy(phase = "正常 ${real}ms")
+            AppLog.log("smart", "巡检正常: $tag · ${real}ms")
             return
         }
         if (real > GOOD_MS || real <= 0) {
-            onAlert("智能: 当前节点${if (real > 0) "延迟 ${real}ms 偏高" else "不可用"}, 开始筛选备选")
+            AppLog.log(
+                "smart",
+                "巡检异常: ${tag ?: "无当前节点"} · ${if (real > 0) "延迟 ${real}ms 超过阈值 ${GOOD_MS}ms" else "出口不可用"} → 开始筛选备选",
+            )
             reselect(real <= 0)
         }
     }
@@ -155,28 +166,33 @@ class SmartSwitchEngine(
         val nodes = pool()
         if (nodes.isEmpty()) {
             state = state.copy(alert = "无可用节点池")
-            onAlert("智能: 无可用节点池")
+            AppLog.log("smart", "筛选中止: 无可用节点池")
             return
         }
         val tags = com.interstellar.proxy.data.config.ConfigBuilder.tagsFor(nodes)
 
         state = state.copy(phase = "Ping 扫描")
-        val startedAt = System.currentTimeMillis()
         val pings = pingPool(nodes, tags)
         val byTag = tags.zip(pings).toMap()
         val candidates = tags.filter { tag ->
             (byTag[tag] ?: Int.MAX_VALUE) in 1 until PING_MAX_MS
         }
+        val fastestPing = pings.filter { it in 1 until PING_TIMEOUT_MS }.minOrNull()
+        AppLog.log(
+            "smart",
+            "Ping 扫描完成: ${nodes.size} 个节点 → ${candidates.size} 个候选 (<${PING_MAX_MS}ms)" +
+                (fastestPing?.let { ", 最快 ${it}ms" } ?: ""),
+        )
         // last round's real delays decide this round's probe order
         val ordered = candidates.sortedBy { tag -> cache[tag]?.first ?: Int.MAX_VALUE }
         state = state.copy(candidateCount = candidates.size)
         if (candidates.isEmpty()) {
             state = state.copy(alert = "无低延迟备选")
-            onAlert("智能: Ping 后无可用的低延迟备选节点 (链路质量差?)")
+            AppLog.log("smart", "筛选中止: Ping 后无低延迟备选节点 (链路质量差?)")
             return
         }
         if (candidates.size < MIN_CANDIDATES_WARN) {
-            onAlert("智能: 备选节点过少 (${candidates.size} 个)")
+            AppLog.log("smart", "备选节点过少: 仅 ${candidates.size} 个")
         }
 
         state = state.copy(phase = "实测筛选")
@@ -188,6 +204,10 @@ class SmartSwitchEngine(
             chosen = ordered
                 .mapNotNull { tag -> kernelDelays[tag]?.takeIf { it in 1 until REAL_MAX_MS }?.let { tag to it } }
                 .minByOrNull { it.second }
+            AppLog.log(
+                "smart",
+                "url-test 实测: ${kernelDelays.size} 条延迟, 候选中达标 ${ordered.count { (kernelDelays[it] ?: 0) in 1 until REAL_MAX_MS }} 个 (<${REAL_MAX_MS}ms)",
+            )
         }
         if (chosen == null && kernelDelays == null) {
             // API-less (Xray): switch-verify candidates in cached order
@@ -196,6 +216,7 @@ class SmartSwitchEngine(
                 state = state.copy(currentTag = tag)
                 val real = probeExit()
                 record(tag, real)
+                AppLog.log("smart", "切换验证: $tag · ${if (real > 0) "${real}ms" else "不可用"}")
                 if (real in 1 until REAL_MAX_MS) {
                     chosen = tag to real
                     break
@@ -212,7 +233,7 @@ class SmartSwitchEngine(
         when {
             chosen == null -> {
                 state = state.copy(alert = "未找到延迟达标节点", phase = "筛选失败")
-                onAlert("智能: 本轮未找到延迟 < ${REAL_MAX_MS}ms 的节点")
+                AppLog.log("smart", "本轮筛选结束: 未找到延迟 <${REAL_MAX_MS}ms 的节点 (耗时 ${elapsed / 1000}s)")
             }
 
             else -> {
@@ -223,6 +244,7 @@ class SmartSwitchEngine(
                         !currentDead
                     ) {
                         state = state.copy(phase = "冷却中")
+                        AppLog.log("smart", "冷却中 (距上次切换不足 ${SWITCH_COOLDOWN_MS / 1000}s), 暂不切换 → $tag (${delay}ms)")
                         return
                     }
                     if (applySwitch(tag)) {
@@ -234,16 +256,20 @@ class SmartSwitchEngine(
                             lastSwitchAt = System.currentTimeMillis(),
                             currentDelayMs = delay,
                         )
+                        AppLog.log("smart", "已切换: ${current ?: "(无)"} → $tag (${delay}ms)")
+                    } else {
+                        AppLog.log("smart", "切换失败: $tag (内核 API 不可达或重启失败)")
                     }
                 } else {
                     record(tag, delay)
                     state = state.copy(phase = "保持 ${delay}ms")
+                    AppLog.log("smart", "保持当前节点: $tag (${delay}ms)")
                 }
             }
         }
         if (elapsed > ROUND_TOO_LONG_MS) {
-            onAlert("智能: 本轮筛选耗时过长 (${"%.0f".format(elapsed / 1000.0)}s)")
             state = state.copy(alert = "筛选耗时 ${elapsed / 1000}s")
+            AppLog.log("smart", "本轮筛选耗时过长 (${elapsed / 1000}s)")
         }
         saveCache()
     }
