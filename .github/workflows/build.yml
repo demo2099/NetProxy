@@ -1,0 +1,152 @@
+# 编译 APK（不需要打 tag）。可在 Actions 页面手动触发，也可 push 到 main 自动编译。
+# 产物在对应 run 的 Artifacts 里下载（无需签名也能出包）。
+# 发正式版仍走 release-apk.yml（打 v* tag → 建 GitHub Release）。
+#
+# 背景：内核二进制（app/libs/libbox.aar 及 jniLibs 里的 mihomo / hev / xray）
+# 被 .gitignore 排除、不在仓库里，本工作流会在 CI 内按与 release-apk.yml
+# 相同的方式重建并缓存，所以首次跑较慢、之后走缓存会快很多。
+
+name: Build APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: '构建类型'
+        required: true
+        default: debug
+        type: choice
+        options:
+          - debug
+          - release
+          - both
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SINGBOX_TAG: v1.14.0-beta.17
+  GOMOBILE_VERSION: v0.1.12
+  NDK_VERSION: 28.0.13004108
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.6'
+          cache: false
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # 先装好 NDK，供 fetch_cores.py（mihomo 非 arm64 ABI + hev）与 sing-box 内核构建共用
+      - name: Install Android NDK & platforms
+        run: |
+          SDKMANAGER="$(ls -d "${ANDROID_HOME}"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | sort | tail -1)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::error::sdkmanager not found under \$ANDROID_HOME/cmdline-tools"
+            exit 1
+          fi
+          yes | "$SDKMANAGER" --install \
+            "ndk;${NDK_VERSION}" \
+            "platforms;android-36" \
+            "platforms;android-24" \
+            "platforms;android-21" > /dev/null
+          {
+            echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/${NDK_VERSION}"
+            echo "ANDROID_NDK_ROOT=${ANDROID_HOME}/ndk/${NDK_VERSION}"
+          } >> "$GITHUB_ENV"
+
+      # app/libs/ 只含 gitignored 的 libbox.aar，checkout 不会创建该目录
+      - name: Ensure app/libs exists
+        run: mkdir -p app/libs
+
+      - name: Cache libbox.aar (sing-box core)
+        id: libbox
+        uses: actions/cache@v4
+        with:
+          path: app/libs/libbox.aar
+          key: libbox-${{ env.SINGBOX_TAG }}
+
+      - name: Cache sidecar cores (mihomo cmfa + hev + xray)
+        uses: actions/cache@v4
+        with:
+          path: app/src/main/jniLibs
+          key: sidecar-v2-mihomo-v1.19.30-cmfa-hev-2.17.1-xray-v26.3.27
+
+      # mihomo 官方 android 二进制会读 packages.xml(root-only) fatal，必须 cmfa 标签自编译；
+      # hev 为 TUN→socks5 JNI 桥(ndk-build)；xray 走官方 release 下载。
+      - name: Build sidecar cores (mihomo / hev / xray)
+        run: python tools/fetch_cores.py
+
+      # sing-box v1.14 起移除 `make lib_android`，改用 cmd/internal/build_libbox。
+      # 该工具固定用 NDK 28.0.13004108、强制 openjdk 17，产出 libbox.aar。
+      - name: Build sing-box core (libbox.aar)
+        if: steps.libbox.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch "${SINGBOX_TAG}" https://github.com/SagerNet/sing-box /tmp/sing-box
+          cd /tmp/sing-box
+          go install github.com/sagernet/gomobile/cmd/gomobile@${GOMOBILE_VERSION}
+          go install github.com/sagernet/gomobile/cmd/gobind@${GOMOBILE_VERSION}
+          go run ./cmd/internal/build_libbox
+          cp libbox.aar "${GITHUB_WORKSPACE}/app/libs/libbox.aar"
+
+      # 签名材料不入库。配置下面 4 个 repo secrets 后产物即与正式签名一致；
+      # 未配置时 release 会按 app/build.gradle.kts 的回退逻辑用 debug 签名。
+      - name: Restore signing config (optional)
+        env:
+          KEYSTORE_B64: ${{ secrets.INTERSTELLAR_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.INTERSTELLAR_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.INTERSTELLAR_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.INTERSTELLAR_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::notice::未配置签名 secrets，release 将回退为 debug 签名"
+            exit 0
+          fi
+          printf '%s' "$KEYSTORE_B64" | base64 -d > interstellar.jks
+          {
+            echo "storeFile=interstellar.jks"
+            echo "storePassword=${STORE_PASSWORD}"
+            echo "keyAlias=${KEY_ALIAS}"
+            echo "keyPassword=${KEY_PASSWORD}"
+          } > signing.properties
+
+      - name: Build APK
+        run: |
+          chmod +x gradlew
+          BT="${{ github.event.inputs.build_type || 'debug' }}"
+          case "$BT" in
+            release) TASKS=":app:assembleRelease" ;;
+            both)    TASKS=":app:assembleDebug :app:assembleRelease" ;;
+            *)       TASKS=":app:assembleDebug" ;;
+          esac
+          echo "build_type=${BT}  tasks=${TASKS}"
+          ./gradlew $TASKS --no-daemon
+
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: interstellar-apk-${{ github.run_number }}
+          path: app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 30
