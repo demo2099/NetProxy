@@ -542,7 +542,7 @@ private fun NodeRow(
                     modifier = Modifier.widthIn(max = 96.dp),
                 )
             }
-            DelayBadge(delay)
+            DelayBadge(delay, tested = item.testedAt > 0)
         }
     }
 }
@@ -623,6 +623,7 @@ private fun NodeGridCell(
             DelayBadge(
                 delay = delay,
                 modifier = Modifier.align(Alignment.End),
+                tested = item.testedAt > 0,
             )
         }
     }
@@ -647,7 +648,11 @@ private fun NodeDetailSheet(item: NodeEntry, onDismiss: () -> Unit) {
             Spacer(Modifier.height(14.dp))
             DetailRow("名称", item.tag)
             item.source?.let { DetailRow("来源", it) }
-            DetailRow("延迟", if (item.delay > 0) "${item.delay} ms" else "未测速")
+            DetailRow("延迟", when {
+                item.delay > 0 -> "${item.delay} ms"
+                item.testedAt > 0 -> "超时"
+                else -> "未测速"
+            })
             DetailRow(
                 "最近测速",
                 if (item.testedAt > 0) {
@@ -786,10 +791,11 @@ private fun DetailRow(label: String, value: String) {
 }
 
 @Composable
-fun DelayBadge(delay: Int, modifier: Modifier = Modifier) {
+fun DelayBadge(delay: Int, modifier: Modifier = Modifier, tested: Boolean = false) {
     val colors = LocalInterstellarColors.current
     val (text, color) = when {
-        delay <= 0 -> "未测" to colors.textTertiary
+        // stamped but no delay → the test ran and the node failed/timed out
+        delay <= 0 -> if (tested) "超时" to colors.danger else "未测" to colors.textTertiary
         delay >= 65000 -> "超时" to colors.danger
         delay < 200 -> "${delay}ms" to colors.success
         delay < 300 -> "${delay}ms" to colors.warning
