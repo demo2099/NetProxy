@@ -1,0 +1,330 @@
+package com.interstellar.proxy.ui
+
+import com.interstellar.proxy.InterstellarApplication
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONObject
+import java.io.File
+import java.net.InetSocketAddress
+import java.net.Proxy
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+
+/**
+ * Smart switch engine — automatic node selection driven by exit quality.
+ *
+ * Loop (self-gated to Started + smart mode):
+ *  1. patrol: real-latency probe of the CURRENT exit (204 through the local
+ *     inbound). Healthy ≤ GOOD_MS → just refresh the cache entry.
+ *  2. unhealthy → reselection round:
+ *     a. fast TCP ping over the whole pool (bounded, concurrent) →
+ *        candidates with ping < PING_MAX_MS
+ *     b. real-latency data: kernels with a control API get a group url-test
+ *        snapshot; otherwise (Xray) candidates are verified by switching
+ *        and probing (bounded attempts)
+ *     c. pick the lowest real latency < REAL_MAX_MS; probe order follows the
+ *        persisted delay cache (last round's results sort the next round)
+ *  3. guard rails: switch cooldown, round-duration alert, thin-candidate
+ *     alert, no-candidate alert — surfaced via [onAlert] and [state].
+ *
+ * The delay cache lives in filesDir/smart_cache.json and doubles as the
+ * "上次延迟记录" for both ordering and the node-page display.
+ */
+class SmartSwitchEngine(
+    private val isActive: () -> Boolean,
+    private val currentTag: () -> String?,
+    private val socksPort: Int,
+    private val useSocksProxy: () -> Boolean,
+    /** Request kernel group url-test + wait for settle; null if unsupported. */
+    private val requestKernelDelays: (suspend () -> Map<String, Int>?)?,
+    /** Hot-switch the core onto [tag] (API or restart). */
+    private val applySwitch: suspend (tag: String) -> Boolean,
+    private val pool: () -> List<com.interstellar.proxy.data.model.ProxyNode>,
+    private val onAlert: (String) -> Unit,
+    private val onStateChanged: (SmartState) -> Unit,
+) {
+    data class SmartState(
+        val active: Boolean = false,
+        val phase: String = "空闲",
+        val currentDelayMs: Int = 0,
+        val candidateCount: Int = 0,
+        val lastSwitchTo: String? = null,
+        val lastSwitchAt: Long = 0,
+        val alert: String? = null,
+    )
+
+    companion object {
+        private const val PATROL_INTERVAL_MS = 30_000L
+        private const val FIRST_PATROL_DELAY_MS = 8_000L
+        private const val GOOD_MS = 300            // patrol threshold
+        private const val REAL_MAX_MS = 300        // candidate quality bar
+        private const val PING_MAX_MS = 200        // fast-pool bar
+        private const val PING_TIMEOUT_MS = 3_000
+        private const val REAL_PROBE_TIMEOUT_S = 5L
+        private const val SWITCH_COOLDOWN_MS = 20_000L
+        private const val ROUND_TOO_LONG_MS = 40_000L
+        private const val MIN_CANDIDATES_WARN = 3
+        private const val VERIFY_ATTEMPTS = 5       // sequential switch-verify (API-less cores)
+        private const val CACHE_FILE = "smart_cache.json"
+        private const val TEST_URL = "https://www.gstatic.com/generate_204"
+    }
+
+    @Volatile
+    private var started = false
+
+    /** tag → (delayMs, epochSec); persisted, sorted ascending by delay. */
+    private val cache = linkedMapOf<String, Pair<Int, Long>>()
+
+    private var state = SmartState()
+        set(value) {
+            field = value
+            onStateChanged(value)
+        }
+
+    /** Per-probe client: the proxy TYPE can change when the user switches cores. */
+    private fun probeClient(): OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(REAL_PROBE_TIMEOUT_S, TimeUnit.SECONDS)
+        .readTimeout(REAL_PROBE_TIMEOUT_S, TimeUnit.SECONDS)
+        .proxy(
+            Proxy(
+                if (useSocksProxy()) Proxy.Type.SOCKS else Proxy.Type.HTTP,
+                InetSocketAddress("127.0.0.1", socksPort),
+            ),
+        )
+        .build()
+
+    fun start() {
+        if (started) return
+        started = true
+        loadCache()
+        kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
+            delay(FIRST_PATROL_DELAY_MS)
+            while (started) {
+                try {
+                    patrolOnce()
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    state = state.copy(phase = "巡检异常: ${e.message?.take(24)}")
+                }
+                delay(PATROL_INTERVAL_MS)
+            }
+        }
+    }
+
+    fun stop() {
+        started = false
+        state = state.copy(active = false, phase = "空闲")
+    }
+
+    // ---- patrol ----
+
+    private suspend fun patrolOnce() {
+        if (!isActive()) {
+            if (state.active) state = state.copy(active = false, phase = "空闲")
+            return
+        }
+        state = state.copy(active = true, phase = "巡检中")
+        val tag = currentTag()
+        val real = probeExit()
+        state = state.copy(currentDelayMs = real)
+        if (tag != null && real in 1..GOOD_MS) {
+            record(tag, real)
+            state = state.copy(phase = "正常 ${real}ms")
+            return
+        }
+        if (real > GOOD_MS || real <= 0) {
+            onAlert("智能: 当前节点${if (real > 0) "延迟 ${real}ms 偏高" else "不可用"}, 开始筛选备选")
+            reselect(real <= 0)
+        }
+    }
+
+    // ---- reselection round ----
+
+    private suspend fun reselect(currentDead: Boolean) {
+        val roundStart = System.currentTimeMillis()
+        val nodes = pool()
+        if (nodes.isEmpty()) {
+            state = state.copy(alert = "无可用节点池")
+            onAlert("智能: 无可用节点池")
+            return
+        }
+        val tags = com.interstellar.proxy.data.config.ConfigBuilder.tagsFor(nodes)
+
+        state = state.copy(phase = "Ping 扫描")
+        val startedAt = System.currentTimeMillis()
+        val pings = pingPool(nodes, tags)
+        val byTag = tags.zip(pings).toMap()
+        val candidates = tags.filter { tag ->
+            (byTag[tag] ?: Int.MAX_VALUE) in 1 until PING_MAX_MS
+        }
+        // last round's real delays decide this round's probe order
+        val ordered = candidates.sortedBy { tag -> cache[tag]?.first ?: Int.MAX_VALUE }
+        state = state.copy(candidateCount = candidates.size)
+        if (candidates.isEmpty()) {
+            state = state.copy(alert = "无低延迟备选")
+            onAlert("智能: Ping 后无可用的低延迟备选节点 (链路质量差?)")
+            return
+        }
+        if (candidates.size < MIN_CANDIDATES_WARN) {
+            onAlert("智能: 备选节点过少 (${candidates.size} 个)")
+        }
+
+        state = state.copy(phase = "实测筛选")
+        var chosen: Pair<String, Int>? = null
+        val kernelDelays = requestKernelDelays?.invoke()
+        if (kernelDelays != null) {
+            // API cores: the url-test snapshot already carries real delays
+            kernelDelays.forEach { (tag, delay) -> if (delay in 1 until 65_000) record(tag, delay) }
+            chosen = ordered
+                .mapNotNull { tag -> kernelDelays[tag]?.takeIf { it in 1 until REAL_MAX_MS }?.let { tag to it } }
+                .minByOrNull { it.second }
+        }
+        if (chosen == null && kernelDelays == null) {
+            // API-less (Xray): switch-verify candidates in cached order
+            for (tag in ordered.take(VERIFY_ATTEMPTS)) {
+                if (!applySwitch(tag)) continue
+                val real = probeExit()
+                record(tag, real)
+                if (real in 1 until REAL_MAX_MS) {
+                    chosen = tag to real
+                    break
+                }
+                if (!currentDead) {
+                    // don't strand traffic on a bad verify — cooldown guard
+                    // keeps the next patrol from thrashing
+                    break
+                }
+            }
+        }
+
+        val elapsed = System.currentTimeMillis() - roundStart
+        when {
+            chosen == null -> {
+                state = state.copy(alert = "未找到延迟达标节点", phase = "筛选失败")
+                onAlert("智能: 本轮未找到延迟 < ${REAL_MAX_MS}ms 的节点")
+            }
+
+            else -> {
+                val (tag, delay) = chosen
+                val current = currentTag()
+                if (tag != current) {
+                    if (System.currentTimeMillis() - state.lastSwitchAt < SWITCH_COOLDOWN_MS &&
+                        !currentDead
+                    ) {
+                        state = state.copy(phase = "冷却中")
+                        return
+                    }
+                    if (applySwitch(tag)) {
+                        record(tag, delay)
+                        state = state.copy(
+                            phase = "已切换 ${delay}ms",
+                            lastSwitchTo = tag,
+                            lastSwitchAt = System.currentTimeMillis(),
+                            currentDelayMs = delay,
+                        )
+                        onAlert("智能: 已切换到更低延迟节点 (${delay}ms)")
+                    }
+                } else {
+                    record(tag, delay)
+                    state = state.copy(phase = "保持 ${delay}ms")
+                }
+            }
+        }
+        if (elapsed > ROUND_TOO_LONG_MS) {
+            onAlert("智能: 本轮筛选耗时过长 (${"%.0f".format(elapsed / 1000.0)}s)")
+            state = state.copy(alert = "筛选耗时 ${elapsed / 1000}s")
+        }
+        saveCache()
+    }
+
+    // ---- probes ----
+
+    /** Real end-to-end exit latency via the local inbound; -1 = failed. */
+    private fun probeExit(): Int {
+        val startedAt = System.currentTimeMillis()
+        return runCatching {
+            probeClient().newCall(Request.Builder().url(TEST_URL).head().build()).execute().use {
+                if (it.isSuccessful) (System.currentTimeMillis() - startedAt).toInt() else -1
+            }
+        }.getOrDefault(-1)
+    }
+
+    /** Direct TCP ping of every node (bounded concurrency), order-aligned with [tags]. */
+    private suspend fun pingPool(
+        nodes: List<com.interstellar.proxy.data.model.ProxyNode>,
+        tags: List<String>,
+    ): List<Int> = coroutineScope {
+        val results = ConcurrentHashMap<Int, Int>()
+        val semaphore = kotlinx.coroutines.sync.Semaphore(16)
+        val done = AtomicInteger()
+        nodes.forEachIndexed { idx, node ->
+            launch {
+                semaphore.withPermit {
+                    val startedAt = System.currentTimeMillis()
+                    results[idx] = runCatching {
+                        java.net.Socket().use { s ->
+                            s.tcpNoDelay = true
+                            s.connect(java.net.InetSocketAddress(node.server, node.port), PING_TIMEOUT_MS)
+                        }
+                        (System.currentTimeMillis() - startedAt).toInt()
+                            .coerceAtMost(PING_TIMEOUT_MS - 1)
+                    }.getOrDefault(PING_TIMEOUT_MS)
+                    done.incrementAndGet()
+                }
+            }
+        }
+        // wait for all probes
+        while (done.get() < nodes.size) kotlinx.coroutines.delay(50)
+        List(nodes.size) { results[it] ?: PING_TIMEOUT_MS }
+    }
+
+    // ---- cache ----
+
+    private fun record(tag: String, delay: Int) {
+        if (delay <= 0) return
+        cache[tag] = delay to System.currentTimeMillis() / 1000
+    }
+
+    private fun cacheFile(): File =
+        File(InterstellarApplication.application.filesDir, CACHE_FILE)
+
+    private fun loadCache() {
+        runCatching {
+            val obj = JSONObject(cacheFile().readText())
+            obj.keys().forEach { tag ->
+                val entry = obj.optJSONObject(tag) ?: return@forEach
+                val delay = entry.optInt("delay", 0)
+                if (delay > 0) cache[tag] = delay to entry.optLong("ts", 0)
+            }
+            sortCache()
+        }
+    }
+
+    private fun saveCache() {
+        runCatching {
+            sortCache()
+            val obj = JSONObject()
+            cache.forEach { (tag, v) -> obj.put(tag, JSONObject().put("delay", v.first).put("ts", v.second)) }
+            cacheFile().writeText(obj.toString())
+        }
+    }
+
+    private fun sortCache() {
+        val sorted = cache.entries.sortedBy { it.value.first }
+        cache.clear()
+        sorted.forEach { (k, v) -> cache[k] = v }
+    }
+
+    /** Ordered tags by cached delay (ascending) — the node page's "智能" order. */
+    fun cachedOrder(): List<String> = cache.keys.toList()
+
+    fun cachedDelay(tag: String): Int? = cache[tag]?.first
+}

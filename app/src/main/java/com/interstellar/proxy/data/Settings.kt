@@ -175,11 +175,22 @@ object Settings {
             commit()
         }
 
-    /** Last selected outbound tag of the main selector (`auto`, a region group, or a node). */
+    /** Last selected outbound tag of the main selector (`auto`, `smart`, a region group, or a node). */
     var selectedOutboundTag: String
         get() = properties.getProperty("selectedOutboundTag", "")
         set(value) {
             properties.setProperty("selectedOutboundTag", value)
+            commit()
+        }
+
+    /**
+     * Smart mode: the node the engine last settled on (baked into configs as
+     * the effective selection while selectedOutboundTag == "smart").
+     */
+    var smartActiveTag: String
+        get() = properties.getProperty("smartActiveTag", "")
+        set(value) {
+            properties.setProperty("smartActiveTag", value)
             commit()
         }
 

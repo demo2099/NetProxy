@@ -248,6 +248,103 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _addSubError = MutableStateFlow<String?>(null)
     val addSubError: StateFlow<String?> = _addSubError
 
+    // ---- smart switch (智能模式) ----
+
+    private val _smartState = MutableStateFlow(SmartSwitchEngine.SmartState())
+    val smartState: StateFlow<SmartSwitchEngine.SmartState> = _smartState
+
+    val smartEngine: SmartSwitchEngine by lazy {
+        SmartSwitchEngine(
+            isActive = {
+                _status.value == Status.Started &&
+                    Settings.selectedOutboundTag == com.interstellar.proxy.data.config.ConfigBuilder.SMART_TAG
+            },
+            currentTag = { smartCurrentTag() },
+            socksPort = 2080,
+            useSocksProxy = { Settings.coreKind == CoreKind.XRAY },
+            requestKernelDelays = { requestKernelGroupDelays() },
+            applySwitch = { tag -> applySmartSwitch(tag) },
+            pool = {
+                SubscriptionRepository.poolOf(
+                    _subscriptions.value,
+                    _activeSubscriptionId.value,
+                    _mixEnabled.value,
+                    _mixSubscriptionIds.value,
+                )
+            },
+            onAlert = { _message.value = it },
+            onStateChanged = { _smartState.value = it },
+        )
+    }
+
+    /** The node smart mode currently rides on (falls back to the live group selection). */
+    private fun smartCurrentTag(): String? {
+        Settings.smartActiveTag.takeIf { it.isNotBlank() }?.let { return it }
+        return _groups.value.find { it.tag == GROUP_TAG }?.selected?.takeIf { it.isNotBlank() }
+    }
+
+    /** sing-box/mihomo: group url-test + settle; Xray has no API → null. */
+    private suspend fun requestKernelGroupDelays(): Map<String, Int>? {
+        return when (Settings.coreKind) {
+            CoreKind.SINGBOX -> {
+                val ok = runCatching {
+                    CommandTarget.standaloneClient().urlTest(ConfigBuilder.AUTO_TAG)
+                }.isSuccess
+                if (!ok) return null
+                awaitUrlTestSettled()
+                _delays.value
+            }
+
+            CoreKind.MIHOMO -> {
+                clashApi.groupDelay(ConfigBuilder.AUTO_TAG) ?: return null
+                _delays.value
+            }
+
+            CoreKind.XRAY -> null
+        }
+    }
+
+    /** Hot-switch the running core; persists smartActiveTag on success. */
+    private suspend fun applySmartSwitch(tag: String): Boolean {
+        val ok = when (Settings.coreKind) {
+            CoreKind.MIHOMO -> runCatching { clashApi.select(ConfigBuilder.GROUP_TAG, tag) }.isSuccess
+
+            CoreKind.SINGBOX -> runCatching {
+                CommandTarget.standaloneClient().selectOutbound(ConfigBuilder.GROUP_TAG, tag)
+            }.isSuccess
+
+            CoreKind.XRAY -> {
+                Settings.smartActiveTag = tag
+                SubscriptionRepository.regenerateActiveConfig()
+                runCatching {
+                    com.interstellar.proxy.core.XrayCore.Holder.instance?.restartFromConfigStore()
+                }.isSuccess
+            }
+        }
+        if (ok) {
+            Settings.smartActiveTag = tag
+        }
+        return ok
+    }
+
+    /** User picked 智能 in the node page: mark mode, bake config, kick the engine. */
+    fun selectSmartMode() {
+        if (Settings.selectedOutboundTag == ConfigBuilder.SMART_TAG) return
+        Settings.selectedOutboundTag = ConfigBuilder.SMART_TAG
+        _selectedOutboundTag.value = ConfigBuilder.SMART_TAG
+        refreshSplitRuleStatus()
+        viewModelScope.launch(Dispatchers.IO) {
+            if (_status.value == Status.Started) {
+                // hot-apply the effective selection (smartActiveTag / auto)
+                Settings.smartActiveTag.takeIf { it.isNotBlank() }?.let { applySmartSwitch(it) }
+            } else {
+                SubscriptionRepository.regenerateActiveConfig()
+            }
+            smartEngine.start()
+            _message.value = "智能模式已开启"
+        }
+    }
+
     /** Abort an in-flight subscription import (dialog 取消). */
     fun cancelAddSubscription() {
         addSubJob?.cancel()
@@ -537,6 +634,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (Settings.coreKind == CoreKind.SINGBOX) commandClient.connect()
         startMihomoBridge()
         registerStoppedReceiver()
+        if (Settings.selectedOutboundTag == com.interstellar.proxy.data.config.ConfigBuilder.SMART_TAG) {
+            smartEngine.start()
+        }
         // poll-reconnect: the box may start/stop at any time, and a failed
         // connect (server not up yet) must be retried to reflect the state
         pollJob?.cancel()
@@ -747,6 +847,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             com.interstellar.proxy.core.AppLog.log("core", "切换内核 → ${kind.displayName}")
+            smartEngine.stop() // probe client type follows the new core
             Settings.coreKind = kind
             _coreKind.value = kind
             _groups.value = emptyList()
@@ -760,6 +861,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
             if (wasRunning) {
                 com.interstellar.proxy.bg.BoxService.start()
+                if (Settings.selectedOutboundTag == com.interstellar.proxy.data.config.ConfigBuilder.SMART_TAG) {
+                    smartEngine.start()
+                }
             }
         }
     }
@@ -793,6 +897,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         Settings.selectedOutboundTag = itemTag
         _selectedOutboundTag.value = itemTag
         refreshSplitRuleStatus()
+        // picking a concrete node exits smart mode
+        if (itemTag != com.interstellar.proxy.data.config.ConfigBuilder.SMART_TAG) {
+            smartEngine.stop()
+        }
         viewModelScope.launch(Dispatchers.IO) {
             if (_status.value == Status.Started) {
                 when (Settings.coreKind) {

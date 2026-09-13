@@ -396,20 +396,26 @@ fun NodesPage(viewModel: AppViewModel) {
             // auto mode active → show the node the urltest group is on right now
             source = autoNow,
         )
-        // smart-switch placeholder — dimmed, tap only explains (not yet built)
+        // smart mode: live status card (engine state), tap to activate
+        val smartState by viewModel.smartState.collectAsState()
+        val smartOn = selectedTag == ConfigBuilder.SMART_TAG
         val smartCard = NodeEntry(
             tag = ConfigBuilder.SMART_TAG,
             type = "smart",
-            delay = 0,
+            delay = smartState.currentDelayMs,
+            testedAt = if (smartState.currentDelayMs > 0) System.currentTimeMillis() / 1000 else 0,
             title = "智能",
+            source = when {
+                !smartOn -> "点按开启"
+                smartState.active -> smartState.phase
+                else -> "连接后自动择优"
+            },
         )
         val displayed = listOf(autoCard, smartCard) + sorted
         val nodeCtx = androidx.compose.ui.platform.LocalContext.current
         val onNodeTap: (NodeEntry) -> Unit = { item ->
             if (item.tag == ConfigBuilder.SMART_TAG) {
-                android.widget.Toast.makeText(
-                    nodeCtx, "智能切换即将上线", android.widget.Toast.LENGTH_SHORT,
-                ).show()
+                viewModel.selectSmartMode()
             } else {
                 viewModel.selectNode(ConfigBuilder.GROUP_TAG, item.tag)
             }
@@ -432,7 +438,7 @@ fun NodesPage(viewModel: AppViewModel) {
                 ) {
                 items(displayed, key = { it.tag }) { item ->
                     androidx.compose.foundation.layout.Box(
-                        modifier = Modifier.alpha(if (item.tag == ConfigBuilder.SMART_TAG) 0.5f else 1f),
+                        modifier = Modifier.alpha(if (item.tag == ConfigBuilder.SMART_TAG && selectedTag != ConfigBuilder.SMART_TAG) 0.6f else 1f),
                     ) {
                         NodeGridCell(
                             item = item,
@@ -455,7 +461,7 @@ fun NodesPage(viewModel: AppViewModel) {
             ) {
                 items(displayed, key = { it.tag }) { item ->
                     Box(
-                        modifier = Modifier.alpha(if (item.tag == ConfigBuilder.SMART_TAG) 0.5f else 1f),
+                        modifier = Modifier.alpha(if (item.tag == ConfigBuilder.SMART_TAG && selectedTag != ConfigBuilder.SMART_TAG) 0.6f else 1f),
                     ) {
                         NodeRow(
                             item = item,
