@@ -234,7 +234,6 @@ class SmartSwitchEngine(
                             lastSwitchAt = System.currentTimeMillis(),
                             currentDelayMs = delay,
                         )
-                        onAlert("智能: 已切换到更低延迟节点 (${delay}ms)")
                     }
                 } else {
                     record(tag, delay)
