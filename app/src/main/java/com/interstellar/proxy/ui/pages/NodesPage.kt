@@ -917,11 +917,24 @@ private fun NodeDetailSheet(item: NodeEntry, onDismiss: () -> Unit) {
                 }
 
                 SheetSection("凭据")
-                n.uuid?.let { DetailRow("UUID", maskSecret(it)) }
-                n.password?.let { DetailRow("密码", maskSecret(it)) }
-                n.sshUser?.let { DetailRow("SSH 用户", it) }
+                n.uuid?.let { DetailRow("UUID", it) }
+                n.password?.let { DetailRow("密码", it) }
                 n.username?.let { DetailRow("用户名", it) }
-                if (n.uuid == null && n.password == null && n.sshUser == null && n.username == null) {
+                n.sshUser?.let { DetailRow("SSH 用户", it) }
+                n.sshKey?.let { DetailRow("SSH 私钥", it) }
+                n.hy2ObfsPassword?.let { DetailRow("混淆密码", it) }
+                n.reality?.let { reality ->
+                    DetailRow("REALITY 公钥", reality.publicKey)
+                    reality.shortId?.let { DetailRow("REALITY shortId", it) }
+                }
+                n.wireguard?.let { wg ->
+                    DetailRow("WG 私钥", wg.privateKey)
+                    wg.peerPublicKey?.let { DetailRow("WG 对端公钥", it) }
+                    wg.preSharedKey?.let { DetailRow("PSK", it) }
+                }
+                if (n.uuid == null && n.password == null && n.sshUser == null && n.username == null &&
+                    n.sshKey == null && n.hy2ObfsPassword == null && n.reality == null && n.wireguard == null
+                ) {
                     DetailRow("—", "此协议无凭据字段")
                 }
             }
@@ -942,12 +955,6 @@ private fun SheetSection(title: String) {
     )
 }
 
-/** Mask a credential, keeping a short recognizable head/tail. */
-private fun maskSecret(value: String): String = when {
-    value.length <= 6 -> value.take(2) + "••••"
-    else -> value.take(4) + "••••" + value.takeLast(2)
-}
-
 @Composable
 private fun DetailRow(label: String, value: String) {
     val colors = LocalInterstellarColors.current
@@ -963,7 +970,8 @@ private fun DetailRow(label: String, value: String) {
             value,
             color = colors.text,
             fontSize = 13.sp,
-            maxLines = 2,
+            // long credentials (keys) wrap instead of being cut off
+            maxLines = if (value.length > 60) 8 else 2,
             overflow = TextOverflow.Ellipsis,
             textAlign = androidx.compose.ui.text.style.TextAlign.End,
         )
