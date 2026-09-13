@@ -309,6 +309,16 @@ fun DashboardPage(
                 }
             }
 
+            // 智能模式状态行: 悬于内核切换上方
+            if (storedSelected == ConfigBuilder.SMART_TAG) {
+                val smartState by viewModel.smartState.collectAsState()
+                SmartStatusLine(
+                    state = smartState,
+                    running = running,
+                    onClick = { onOpenTab(MainTab.Nodes) },
+                )
+            }
+
             Spacer(Modifier.height(8.dp))
 
             val coreOrder = listOf(
@@ -689,7 +699,50 @@ private fun InstrumentCard(
 }
 
 /** All four dashboard instruments share one exact height so the grid stays uniform. */
-/** 文字描述型状态标签: [路由:规则] 点击跳分流设置 */
+/** Smart-mode status line, shown above the core segment while smart is on. */
+@Composable
+private fun SmartStatusLine(
+    state: com.interstellar.proxy.ui.SmartSwitchEngine.SmartState,
+    running: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = LocalInterstellarColors.current
+    val delayText = state.currentDelayMs.takeIf { it > 0 }?.let { "${it}ms" }
+    val body = when {
+        !running -> "连接后自动择优"
+        state.alert != null -> state.alert
+        else -> buildString {
+            append(state.phase)
+            state.currentTag?.let { append(" · $it") }
+            delayText?.let { append(" · $it") }
+        }
+    }
+    Row(
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .pressableClick(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+    ) {
+        Text(
+            "智能",
+            color = colors.primary,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            body,
+            color = if (state.alert != null) colors.warning else colors.textTertiary,
+            fontSize = 11.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(end = 4.dp),
+        )
+    }
+}
+
 @Composable
 private fun StatusChip(label: String, value: String, onClick: () -> Unit) {
     val colors = LocalInterstellarColors.current
