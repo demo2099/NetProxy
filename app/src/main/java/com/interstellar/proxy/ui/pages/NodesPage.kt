@@ -361,6 +361,18 @@ fun NodesPage(viewModel: AppViewModel) {
             )
         }
 
+        // ── 进度条/统计摘要: 悬于节点卡片上方 ──
+        if (testRunning || testSummary != null) {
+            TestSummaryBar(
+                running = testRunning,
+                mode = lastMode,
+                progress = if (pingRunning) pingProg else testProg,
+                summary = testSummary,
+                onDismiss = { testSummary = null },
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+        }
+
         val sorted = remember(nodeItems, sortMode, delays) {
             when (sortMode) {
                 1 -> nodeItems.sortedBy { it.tag.lowercase() }
@@ -455,18 +467,6 @@ fun NodesPage(viewModel: AppViewModel) {
                 }
             }
         }
-
-        // ── 底部进度条: 运行中显示 n/N, 完成后显示摘要, 点按消失 ──
-        if (testRunning || testSummary != null) {
-            Spacer(Modifier.height(8.dp))
-            TestSummaryBar(
-                running = testRunning,
-                mode = lastMode,
-                progress = if (pingRunning) pingProg else testProg,
-                summary = testSummary,
-                onDismiss = { testSummary = null },
-            )
-        }
     }
 
     detailItem?.let { item ->
@@ -513,10 +513,11 @@ private fun TestSummaryBar(
     progress: Pair<Int, Int>?,
     summary: NodesTestSummary?,
     onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val colors = LocalInterstellarColors.current
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(colors.panelSolid)
