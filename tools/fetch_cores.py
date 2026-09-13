@@ -17,6 +17,10 @@ Windows checkouts.
 Run from repo root:  python tools/fetch_cores.py
 Requires: git, go (mihomo); ndk-build via ANDROID_NDK_HOME or
 $ANDROID_HOME/ndk/<ver> for the non-arm64 mihomo ABIs and hev.
+
+NOTE: this fork ships the sing-box core only — sing-box runs in-process via
+libbox.aar and needs none of these sidecars. The default run is therefore a
+no-op; pass INTERSTELLAR_WITH_SIDECARS=1 to actually build the sidecars.
 """
 import os
 import shutil
@@ -38,6 +42,13 @@ XRAY_MIRRORS = ["", "https://ghfast.top/", "https://gh-proxy.com/", "https://ghp
 ROOT = Path(__file__).resolve().parent.parent
 JNILIBS = ROOT / "app" / "src" / "main" / "jniLibs"
 BUILD = Path(os.environ.get("INTERSTELLAR_BUILD_DIR", ROOT / "build" / "cores"))
+
+# sing-box-only by default: the sidecars are not packaged in this fork
+# (see CoreKind.available), so building them just wastes CI minutes and
+# bloats the APK. Opt in explicitly to restore them.
+WITH_SIDECARS = os.environ.get("INTERSTELLAR_WITH_SIDECARS", "").strip().lower() in (
+    "1", "true", "yes", "on",
+)
 
 ABIS = {  # goarch -> android abi
     "arm64": "arm64-v8a",
@@ -239,6 +250,10 @@ def fetch_xray() -> None:
 
 
 def main() -> None:
+    if not WITH_SIDECARS:
+        print("sing-box-only build — skipping mihomo / hev / xray sidecars.\n"
+              "Set INTERSTELLAR_WITH_SIDECARS=1 to build them too.")
+        return
     build_mihomo()
     build_hev()
     fetch_xray()

@@ -318,37 +318,36 @@ fun DashboardPage(
                 )
             }
 
-            Spacer(Modifier.height(8.dp))
+            // 只有一个内核时（sing-box-only 构建）不显示切换控件
+            val coreOrder = com.interstellar.proxy.core.CoreKind.available
+            if (coreOrder.size > 1) {
+                Spacer(Modifier.height(8.dp))
 
-            val coreOrder = listOf(
-                com.interstellar.proxy.core.CoreKind.SINGBOX,
-                com.interstellar.proxy.core.CoreKind.MIHOMO,
-                com.interstellar.proxy.core.CoreKind.XRAY,
-            )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    "内核",
-                    color = colors.textTertiary,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Medium,
-                    letterSpacing = 1.sp,
-                    modifier = Modifier.width(30.dp),
-                )
-                SegmentedControl(
-                    items = coreOrder.map { it.displayName },
-                    selected = coreOrder.indexOf(coreKind).coerceAtLeast(0),
-                    onSelect = { i ->
-                        val picked = coreOrder[i]
-                        if (!busy && status != Status.Starting) {
-                            viewModel.switchCore(picked)
-                        }
-                    },
-                    modifier = Modifier.weight(1f),
-                    controlHeight = 40.dp,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        "内核",
+                        color = colors.textTertiary,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.width(30.dp),
+                    )
+                    SegmentedControl(
+                        items = coreOrder.map { it.displayName },
+                        selected = coreOrder.indexOf(coreKind).coerceAtLeast(0),
+                        onSelect = { i ->
+                            val picked = coreOrder[i]
+                            if (!busy && status != Status.Starting) {
+                                viewModel.switchCore(picked)
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        controlHeight = 40.dp,
+                    )
+                }
             }
 
             Spacer(Modifier.height(12.dp))

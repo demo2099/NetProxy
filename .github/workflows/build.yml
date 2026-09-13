@@ -2,9 +2,14 @@
 # 产物在对应 run 的 Artifacts 里下载（无需签名也能出包）。
 # 发正式版仍走 release-apk.yml（打 v* tag → 建 GitHub Release）。
 #
-# 背景：内核二进制（app/libs/libbox.aar 及 jniLibs 里的 mihomo / hev / xray）
-# 被 .gitignore 排除、不在仓库里，本工作流会在 CI 内按与 release-apk.yml
-# 相同的方式重建并缓存，所以首次跑较慢、之后走缓存会快很多。
+# 背景：内核二进制（app/libs/libbox.aar）被 .gitignore 排除、不在仓库里，本工作流
+# 会在 CI 内按与 release-apk.yml 相同的方式重建并缓存，所以首次跑较慢、之后走缓存会快很多。
+#
+# 本分支只打包 sing-box 内核：mihomo / Xray 这两个 sidecar（libmihomo.so /
+# libxray.so / libhev.so）及其 v2fly geodata 已不再构建和打包，所以下面没有
+# sidecar 缓存与 fetch_cores 步骤。每个 64 位分包因此小约 36MB。
+# 要恢复 sidecar：给 fetch_cores 那步加 env INTERSTELLAR_WITH_SIDECARS=1，
+# 并还原 app/src/main/assets/geodata（git 历史里有）。
 
 name: Build APK
 
@@ -58,7 +63,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # 先装好 NDK，供 fetch_cores.py（mihomo 非 arm64 ABI + hev）与 sing-box 内核构建共用
+      # 装好 NDK，供 sing-box 内核（cmd/internal/build_libbox）构建使用
       - name: Install Android NDK & platforms
         run: |
           SDKMANAGER="$(ls -d "${ANDROID_HOME}"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | sort | tail -1)"
@@ -86,17 +91,6 @@ jobs:
         with:
           path: app/libs/libbox.aar
           key: libbox-${{ env.SINGBOX_TAG }}
-
-      - name: Cache sidecar cores (mihomo cmfa + hev + xray)
-        uses: actions/cache@v4
-        with:
-          path: app/src/main/jniLibs
-          key: sidecar-v2-mihomo-v1.19.30-cmfa-hev-2.17.1-xray-v26.3.27
-
-      # mihomo 官方 android 二进制会读 packages.xml(root-only) fatal，必须 cmfa 标签自编译；
-      # hev 为 TUN→socks5 JNI 桥(ndk-build)；xray 走官方 release 下载。
-      - name: Build sidecar cores (mihomo / hev / xray)
-        run: python tools/fetch_cores.py
 
       # sing-box v1.14 起移除 `make lib_android`，改用 cmd/internal/build_libbox。
       # 该工具固定用 NDK 28.0.13004108、强制 openjdk 17，产出 libbox.aar。

@@ -10,6 +10,21 @@ enum class CoreKind(val wire: String, val displayName: String) {
     XRAY("xray", "Xray");
 
     companion object {
-        fun from(value: String?): CoreKind = entries.find { it.wire == value } ?: SINGBOX
+        /**
+         * Cores actually packaged in this build.
+         *
+         * This fork ships sing-box only: the mihomo / Xray sidecars
+         * (libmihomo.so, libxray.so, libhev.so) and their v2fly geodata are no
+         * longer built or bundled, so both the picker and [from] are limited to
+         * sing-box. That also means a stale saved value like "mihomo" degrades
+         * to sing-box instead of trying to launch a sidecar that isn't there.
+         *
+         * To bring a sidecar back: add it here, run
+         * `INTERSTELLAR_WITH_SIDECARS=1 python tools/fetch_cores.py`, and
+         * restore app/src/main/assets/geodata (git history has it).
+         */
+        val available: List<CoreKind> = listOf(SINGBOX)
+
+        fun from(value: String?): CoreKind = available.find { it.wire == value } ?: SINGBOX
     }
 }
