@@ -23,6 +23,7 @@ import com.interstellar.proxy.data.subscription.SubscriptionParser
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.OutboundGroup
 import io.nekohasekai.libbox.StatusMessage
+import com.interstellar.proxy.core.AppLog
 import com.interstellar.proxy.core.ClashApiClient
 import com.interstellar.proxy.core.CoreGroup
 import com.interstellar.proxy.core.CoreGroupItem
@@ -909,11 +910,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch(Dispatchers.IO) {
             if (_status.value == Status.Started) {
-                when (Settings.coreKind) {
+                val startedAt = System.currentTimeMillis()
+                val switched = when (Settings.coreKind) {
                     CoreKind.MIHOMO -> {
                         val ok = runCatching { clashApi.select(groupTag, itemTag) }.getOrDefault(false)
                         if (!ok) _message.value = "切换失败: 内核 API 不可达"
                         runCatching { pollMihomoOnce() }
+                        ok
                     }
 
                     CoreKind.XRAY -> {
@@ -923,19 +926,49 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                             com.interstellar.proxy.core.XrayCore.Holder.instance?.restartFromConfigStore()
                         }.onSuccess {
                             _message.value = "已重启 Xray 生效"
-                        }
+                        }.isSuccess
                     }
 
                     CoreKind.SINGBOX -> runCatching {
                         CommandTarget.standaloneClient().selectOutbound(groupTag, itemTag)
                     }.onFailure {
                         _message.value = "切换失败: ${it.message}"
-                    }
+                    }.isSuccess
                 }
+                val cost = System.currentTimeMillis() - startedAt
+                AppLog.log(
+                    "core",
+                    if (switched) "已切换 → $itemTag (${cost}ms)，并断开旧连接使其立即生效"
+                    else "切换失败 → $itemTag (${cost}ms)",
+                )
+                // 换 selector 只影响**之后新建**的连接，旧连接还钉在旧节点上
+                if (switched) dropConnections()
             } else {
                 SubscriptionRepository.regenerateActiveConfig()
                 _selectedOutboundTag.value = Settings.selectedOutboundTag
             }
+        }
+    }
+
+    /**
+     * 掐掉内核里所有已建立的连接。
+     *
+     * selector 只对**之后新建**的连接生效：已经在跑的 TCP 会话仍然钉在旧节点上
+     * （浏览器 keep-alive / HTTP2 会话能挂几分钟，IM 那种长连接更久），所以不断开
+     * 旧连接的话，用户点完节点会觉得"根本没切过去"。Clash 系客户端都是靠"切换即
+     * 关闭连接"让切换立刻可见的。
+     *
+     * 代价：正在进行的下载/上传会被打断（下次请求会走新节点重连）。
+     * Xray 没有控制 API，关不掉，只能等它自然断开。
+     */
+    private suspend fun dropConnections() {
+        runCatching {
+            when (Settings.coreKind) {
+                CoreKind.MIHOMO -> clashApi.closeAllConnections()
+                CoreKind.SINGBOX -> CommandTarget.standaloneClient().closeConnections()
+                CoreKind.XRAY -> Unit
+            }
+            Unit
         }
     }
 
