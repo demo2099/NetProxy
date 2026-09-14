@@ -1,5 +1,6 @@
 package com.interstellar.proxy.data.net
 
+import android.os.Build
 import com.interstellar.proxy.InterstellarApplication
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -10,7 +11,9 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Downloads subscription content, ported from interstellar-proxy's services/import.rs:
- * UA masquerades as clash-verge so panels return the subscription-userinfo header.
+ * UA masquerades as clash-verge so panels return the subscription-userinfo header,
+ * with the device model appended so the panel's subscribe log can tell devices apart.
+ * See [USER_AGENT] — the clash-verge part must not change.
  *
  * When the core is running, requests go through the local mixed inbound
  * (127.0.0.1:2080) so they ride the selected node; falls back to direct.
@@ -125,5 +128,33 @@ object SubscriptionFetcher {
 
     private val CONTENT_DISPOSITION = Regex("""filename\s*=\s*"?([^";]+)"?""")
 
-    private const val USER_AGENT = "Interstellar/0.1 clash-verge/1.7.7 Android"
+    /**
+     * 面板按 UA 决定返回哪种格式（含 `clash-verge` 才回 Clash YAML，否则可能是
+     * sing-box JSON 或 base64 节点列表），所以 [BASE_UA] 这一段**一个字都不能改**。
+     *
+     * 后面追加机型：机场面板的订阅日志记录的就是这个 UA，带上机型才认得出是哪台设备。
+     * 空格换成下划线，免得面板按空格切分时把机型拆成两个 token。
+     */
+    private val USER_AGENT: String by lazy {
+        val label = deviceLabel()
+        if (label.isEmpty()) BASE_UA else "$BASE_UA $label"
+    }
+
+    private const val BASE_UA = "Interstellar/0.1 clash-verge/1.7.7 Android"
+
+    /**
+     * `Xiaomi_14_Ultra` / `samsung_SM_G9910` / `Google_Pixel_7_Pro`。
+     * 厂商名已含在机型里就不重复拼（小米/红米的 MODEL 常自带前缀）。取不到返回空串。
+     */
+    private fun deviceLabel(): String = runCatching {
+        val manufacturer = Build.MANUFACTURER.trim()
+        val model = Build.MODEL.trim()
+        val label = when {
+            model.isBlank() -> manufacturer
+            manufacturer.isBlank() -> model
+            model.startsWith(manufacturer, ignoreCase = true) -> model
+            else -> "$manufacturer $model"
+        }
+        label.trim().replace(Regex("\\s+"), "_")
+    }.getOrDefault("")
 }
