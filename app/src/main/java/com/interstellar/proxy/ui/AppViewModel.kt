@@ -28,7 +28,6 @@ import com.interstellar.proxy.core.CoreGroup
 import com.interstellar.proxy.core.CoreGroupItem
 import com.interstellar.proxy.core.CoreKind
 import com.interstellar.proxy.core.DirectPing
-import com.interstellar.proxy.core.MihomoCore
 import com.interstellar.proxy.utils.CommandClient
 import com.interstellar.proxy.utils.CommandTarget
 import kotlinx.coroutines.Dispatchers

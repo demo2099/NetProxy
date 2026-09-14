@@ -5,7 +5,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.interstellar.proxy.core.ClashApiClient
 import com.interstellar.proxy.core.CoreKind
-import com.interstellar.proxy.core.MihomoCore
 import com.interstellar.proxy.data.Settings
 import com.interstellar.proxy.utils.CommandClient
 import com.interstellar.proxy.utils.CommandTarget
