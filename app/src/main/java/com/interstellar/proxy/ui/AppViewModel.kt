@@ -1300,7 +1300,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                val msg = "下载失败: ${e.message} · 订阅域名可能无法直连, 建议开启代理后重试"
+                // 分门别类，否则所有失败都显示"域名无法直连"，用户根本查不出原因
+                val detail = e.message ?: e.javaClass.simpleName
+                val msg = when {
+                    e is IllegalArgumentException ->
+                        "链接格式不对：$detail · 需要以 http:// 或 https:// 开头"
+                    detail.contains("CLEARTEXT", ignoreCase = true) ->
+                        "明文 HTTP 被系统拦截：$detail"
+                    else ->
+                        "下载失败: $detail · 订阅域名可能无法直连, 建议开启代理后重试"
+                }
                 _message.value = msg
                 _addSubError.value = msg
             } finally {

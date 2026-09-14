@@ -1,6 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- loopback control APIs (mihomo Clash REST / future Xray) are plain HTTP -->
+<!--
+  targetSdk >= 28 起 Android 默认**禁止明文 HTTP**。本文件原先只放行了
+  127.0.0.1 / localhost，所以用户填 http:// 订阅链接时，OkHttp 会在发出请求前
+  直接抛 `UnknownServiceException: CLEARTEXT communication to ... not permitted
+  by network security policy`，表现就是"只支持 https"。
+
+  订阅地址是用户自己填的，自建面板/裸 IP + 端口经常只有 http；出口 IP 探测端点里
+  也本来就有 http://ip-api.com。所以这里放开 base-config。
+
+  注意：该策略只约束 **App 自己的 HTTP 栈（OkHttp）**：订阅拉取、规则集下载、IP 探测。
+  sing-box / mihomo / Xray 这些内核走原生 socket，不受 network security config 约束。
+
+  代价：http 订阅是明文传输，节点凭据（密码 / UUID）在链路上可被中间人读取或篡改。
+  能上 https 的面板就优先用 https。
+-->
 <network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+
+    <!-- loopback 控制接口（mihomo Clash REST / Xray）本来就是明文，单独列出表意更清楚 -->
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">127.0.0.1</domain>
         <domain includeSubdomains="false">localhost</domain>

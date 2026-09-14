@@ -69,7 +69,7 @@ fun AddSubscriptionDialog(
                     value = url,
                     onValueChange = { url = it },
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("https://… 订阅链接", color = colors.textTertiary, fontSize = 12.sp) },
+                    placeholder = { Text("http:// 或 https:// 订阅链接", color = colors.textTertiary, fontSize = 12.sp) },
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
                     trailingIcon = {
