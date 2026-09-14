@@ -26,6 +26,7 @@ import com.interstellar.proxy.InterstellarApplication
 import com.interstellar.proxy.constant.Action
 import com.interstellar.proxy.constant.Alert
 import com.interstellar.proxy.constant.Status
+import com.interstellar.proxy.core.ApiPort
 import com.interstellar.proxy.core.CoreEngines
 import com.interstellar.proxy.core.CoreHost
 import com.interstellar.proxy.core.CoreOverrides
@@ -143,6 +144,9 @@ class BoxService(private val service: Service, private val platformInterface: Pl
                 stopAndAlert(Alert.CreateService, e.message)
                 return
             }
+            // 内核活着 = 控制端口被它占着，在它退出前不能再换端口
+            // （换了下一次热重载就会打到没人监听的端口上）
+            ApiPort.pin()
 
             if (core?.needWifiState() == true) {
                 val wifiPermission =
@@ -264,6 +268,8 @@ class BoxService(private val service: Service, private val platformInterface: Pl
             DefaultNetworkMonitor.stop()
             core?.shutdown()
             core = null
+            // 内核真的没了才放开端口；否则"刚停就起"会误判成冲突而白换端口
+            ApiPort.release()
             withContext(Dispatchers.Main) {
                 status.value = Status.Stopped
                 if (pendingRestart) {
@@ -277,8 +283,9 @@ class BoxService(private val service: Service, private val platformInterface: Pl
     }
 
     private suspend fun stopAndAlert(type: Alert, message: String? = null) {
-        android.util.Log.e("InterstellarUI", "service stopped: $type msg=$message", Throwable("trace"))
-        com.interstellar.proxy.core.AppLog.log("service", "已停止: $type${message?.let { " · $it" } ?: ""}")
+        val detail = humanize(message)
+        android.util.Log.e("InterstellarUI", "service stopped: $type msg=$detail", Throwable("trace"))
+        com.interstellar.proxy.core.AppLog.log("service", "已停止: $type${detail?.let { " · $it" } ?: ""}")
         val pfd = fileDescriptor
         if (pfd != null) {
             pfd.close()
@@ -287,6 +294,7 @@ class BoxService(private val service: Service, private val platformInterface: Pl
         DefaultNetworkMonitor.stop()
         core?.shutdown()
         core = null
+        ApiPort.release()
         withContext(Dispatchers.Main) {
             if (receiverRegistered) {
                 service.unregisterReceiver(receiver)
@@ -294,12 +302,31 @@ class BoxService(private val service: Service, private val platformInterface: Pl
             }
             notification.close()
             binder.broadcast { callback ->
-                callback.onServiceAlert(type.ordinal, message)
+                callback.onServiceAlert(type.ordinal, detail)
             }
             status.value = Status.Stopped
             notifyStopped()
             service.stopSelf()
         }
+    }
+
+    /**
+     * 内核启动失败信息里最容易被误读的一条：控制端口被占。sing-box 和 mihomo 都
+     * 把它当**致命错误**（整个配置起不来，不是某个节点的问题），而原文只有一句
+     * 英文，看不出跟端口有关：
+     *
+     *   finish-start clash server: external controller listen error:
+     *   listen tcp 127.0.0.1:9090: bind: address already in use
+     *
+     * 注意 Android 不允许 App 去 kill 别的进程占着的 socket，所以这里给不出"杀掉
+     * 端口"的办法 —— 能做的只有绕开，而绕开在 [ApiPort.acquire] 里已经自动做了。
+     */
+    private fun humanize(message: String?): String? {
+        if (message == null) return null
+        if (!message.contains("address already in use", ignoreCase = true)) return message
+        return "$message · 内核控制端口被别的程序占着（多半是另一个 Clash 客户端，" +
+            "或者上次没退干净的内核）。Android 不允许 App 结束别的进程，杀不掉这个端口 —— " +
+            "已自动改用空闲端口，重试即可"
     }
 
     @OptIn(DelicateCoroutinesApi::class)

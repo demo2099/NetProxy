@@ -44,6 +44,12 @@ object ConfigBuilder {
         val selectedNodeTag: String? = null,
         val mixedPortEnabled: Boolean = true,
         val mixedPort: Int = 2080,
+        /**
+         * 内核控制端口（Clash API）。默认只是兜底 —— 真正生成配置时由
+         * [com.interstellar.proxy.data.SubscriptionRepository] 传
+         * [com.interstellar.proxy.core.ApiPort.acquire] 的结果进来：9090 被占
+         * （别的 Clash 客户端 / 上次没退干净的内核）时内核会直接起不来。
+         */
         val apiPort: Int = 9090,
         val apiSecret: String = "",
         val customRules: List<CustomRouteRule> = emptyList(),

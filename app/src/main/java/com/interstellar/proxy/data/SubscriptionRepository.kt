@@ -197,6 +197,9 @@ object SubscriptionRepository {
             bypassCn = Settings.bypassCnEnabled,
             adBlock = Settings.adBlockEnabled,
             selectedNodeTag = selectedTag,
+            // 控制端口每次生成配置时探一次（9090 被占就换一个）—— 必须在这里定，
+            // 因为它要烘焙进配置；内核起来之后 ClashApiClient 读的也是同一个值。
+            apiPort = com.interstellar.proxy.core.ApiPort.acquire(),
             apiSecret = Settings.apiSecret,
             customRules = CustomRulesStore.rules.toList(),
             dnsOverrides = DnsOverridesStore.enabled(),

@@ -73,7 +73,7 @@ class ConnectionsViewModel(application: Application) : AndroidViewModel(applicat
         },
     )
 
-    private val clashApi by lazy { ClashApiClient(MihomoCore.API_PORT, Settings.apiSecret) }
+    private val clashApi by lazy { ClashApiClient(Settings.apiSecret) }
 
     private suspend fun publish(events: ConnectionEvents) = withContext(Dispatchers.Default) {
         store.applyEvents(events)

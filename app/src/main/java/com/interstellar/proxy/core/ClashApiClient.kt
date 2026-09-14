@@ -19,10 +19,13 @@ import java.util.concurrent.TimeUnit
  * Clash-compatible REST client — the mihomo control surface (the same API
  * sing-box's experimental clash_api exposes). Semantics follow
  * satelite-proxy's api/clash_api.rs.
+ *
+ * 端口是**运行时**才定的（见 [ApiPort]），所以这里存的是取值函数而不是快照：
+ * 客户端往往是 long-lived 的（UI 里 by lazy），而端口可能因为 9090 被占而变。
  */
 class ClashApiClient(
-    private val port: Int,
     private val secret: String,
+    private val port: () -> Int = { ApiPort.current },
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val client = OkHttpClient.Builder()
@@ -33,7 +36,7 @@ class ClashApiClient(
         .readTimeout(10, TimeUnit.SECONDS)
         .build()
 
-    private val base = "http://127.0.0.1:$port"
+    private val base get() = "http://127.0.0.1:${port()}"
     private val auth get() = "Bearer $secret"
 
     suspend fun version(): String? = withContext(Dispatchers.IO) {

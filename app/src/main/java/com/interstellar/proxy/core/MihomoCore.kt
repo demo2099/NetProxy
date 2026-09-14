@@ -32,7 +32,8 @@ class MihomoCore(
 
     private val workDir = File(context.filesDir, "mihomo").apply { mkdirs() }
     private val configFile = File(workDir, "config.yaml")
-    val api = ClashApiClient(API_PORT, Settings.apiSecret)
+    // 端口走 ApiPort.current（9090 被占时可能是 9091…），不写死
+    val api = ClashApiClient(Settings.apiSecret)
 
     private var sidecar: SidecarProcess? = null
     private var lastOverrides: CoreOverrides? = null
@@ -139,10 +140,11 @@ class MihomoCore(
         // real endpoint once and surface its error for diagnosis
         var ready = false
         var socketErr: String? = null
+        val apiPort = ApiPort.current
         repeat(READY_POLLS) {
             try {
                 java.net.Socket().use { s ->
-                    s.connect(java.net.InetSocketAddress("127.0.0.1", API_PORT), 600)
+                    s.connect(java.net.InetSocketAddress("127.0.0.1", apiPort), 600)
                 }
                 ready = true
                 return@repeat
@@ -153,10 +155,10 @@ class MihomoCore(
         }
         if (!ready) {
             Log.e(TAG, "mihomo API socket unreachable: $socketErr")
-            AppLog.log("mihomo", "API 端口不可达: $socketErr")
+            AppLog.log("mihomo", "API 端口 $apiPort 不可达: $socketErr")
             error("mihomo 启动超时(详见 ${configFile.parentFile}/libmihomo.so.log)")
         }
-        AppLog.log("mihomo", "API 就绪 (${"%.1f".format((System.currentTimeMillis() - spawnAtMs) / 1000.0)}s)")
+        AppLog.log("mihomo", "API 就绪 (端口 $apiPort, ${"%.1f".format((System.currentTimeMillis() - spawnAtMs) / 1000.0)}s)")
         runCatching { api.versionOrThrow() }.onFailure {
             AppLog.log("mihomo", "API 探测失败: ${it.message}")
             Log.w(TAG, "version probe failed", it)
@@ -235,7 +237,8 @@ class MihomoCore(
 
     companion object {
         private const val TAG = "MihomoCore"
-        const val API_PORT = 9090
+        // 控制端口不再是常量：9090 被别的进程占着就换，见 ApiPort。
+        // （以前写死 9090，结果是 mihomo 的 external-controller 绑不上 → 直接退出）
         /** must match ConfigBuilder.BuildOptions.mixedPort default */
         const val MIXED_PORT = 2080
         private const val READY_POLLS = 20

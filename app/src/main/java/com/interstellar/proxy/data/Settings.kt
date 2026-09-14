@@ -227,6 +227,20 @@ object Settings {
             commit()
         }
 
+    /**
+     * 内核控制端口（Clash API）。默认 9090，被占用时由
+     * [com.interstellar.proxy.core.ApiPort] 换成空闲端口并写回这里。
+     *
+     * 必须持久化：端口已经烘焙进 active.json / config.yaml 了，进程被系统杀掉后
+     * 重启，[com.interstellar.proxy.core.ClashApiClient] 还得能读到同一个值。
+     */
+    var apiPort: Int
+        get() = properties.getProperty("apiPort", "9090").toIntOrNull() ?: 9090
+        set(value) {
+            properties.setProperty("apiPort", value.toString())
+            commit()
+        }
+
     var themeMode: String
         get() = properties.getProperty("themeMode", "light")
         set(value) {

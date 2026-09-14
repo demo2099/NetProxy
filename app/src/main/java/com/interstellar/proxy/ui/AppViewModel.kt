@@ -516,7 +516,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     // ---- mihomo live bridge (Clash REST → same state the libbox client feeds) ----
 
-    private val clashApi by lazy { ClashApiClient(MihomoCore.API_PORT, Settings.apiSecret) }
+    private val clashApi by lazy { ClashApiClient(Settings.apiSecret) }
     private var mihomoJob: Job? = null
     private var mihomoLastDown = -1L
     private var mihomoLastUp = -1L
