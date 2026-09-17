@@ -71,6 +71,34 @@ data class ProxyNode(
     val subscriptionId: String? = null,
 ) {
     /**
+     * The ALPN list actually handed to the kernel.
+     *
+     * AnyTLS is the one protocol where the two subscription formats disagree.
+     * The panel's sing-box JSON carries `tls.alpn = ["h3"]` on every AnyTLS node,
+     * but the Clash YAML — the format this app consumes, see SubscriptionFetcher
+     * — has no `alpn` key for anytls at all (verified: the string "alpn" does not
+     * occur even once in the whole document). Clash Meta has no such field for
+     * anytls, so the value cannot survive the conversion, no matter how the
+     * parser is written.
+     *
+     * The consequence is that a client reading the sing-box JSON (Hiddify, the
+     * official sing-box clients) sends `h3` for these nodes while this app sent
+     * nothing at all. AnyTLS is TLS-only and these nodes are all REALITY, where
+     * the ClientHello is what the server authenticates and what the fallback
+     * path forwards to the cover site; a node whose server only completes the
+     * handshake for its advertised ALPN then looks "dead" here while working
+     * everywhere else.
+     *
+     * So: fill in the provider's own value for AnyTLS when the subscription said
+     * nothing, and leave every other protocol at `null`. Not defaulting globally
+     * matters — for vmess/vless/trojan the correct behaviour is to send no ALPN
+     * and let sing-box's uTLS fingerprint supply its own, so a blanket default
+     * would break working nodes.
+     */
+    val effectiveAlpn: List<String>?
+        get() = alpn ?: ANYTLS_DEFAULT_ALPN.takeIf { type == NodeType.ANYTLS }
+
+    /**
      * Compact protocol line for node cards, e.g. "vless·grpc·tls",
      * "trojan·ws·tls", "hysteria2·obfs".
      */
@@ -115,6 +143,11 @@ data class ProxyNode(
         val reserved: List<Int>? = null,
         val mtu: Int? = null,
     )
+
+    companion object {
+        /** See [effectiveAlpn]. Shared so both config builders agree on one value. */
+        val ANYTLS_DEFAULT_ALPN: List<String> = listOf("h3")
+    }
 }
 
 enum class NodeType(val wire: String) {

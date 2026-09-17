@@ -237,7 +237,7 @@ object MihomoConfigBuilder {
                 node.downMbps?.let { put("down", "$it Mbps") }
                 node.sni?.let { put("sni", it) }
                 node.insecure?.let { put("skip-cert-verify", it) }
-                node.alpn?.let { put("alpn", it) }
+                node.effectiveAlpn?.let { put("alpn", it) }
             }
 
             NodeType.TUIC -> {
@@ -249,7 +249,7 @@ object MihomoConfigBuilder {
                 node.reduceRtt?.let { put("reduce-rtt", it) }
                 node.sni?.let { put("sni", it) }
                 node.insecure?.let { put("skip-cert-verify", it) }
-                node.alpn?.let { put("alpn", it) }
+                node.effectiveAlpn?.let { put("alpn", it) }
             }
 
             NodeType.SOCKS -> {
@@ -339,7 +339,7 @@ object MihomoConfigBuilder {
         if (hasTls) {
             put("servername", sni)
             put("skip-cert-verify", node.insecure ?: false)
-            node.alpn?.let { put("alpn", it) }
+            node.effectiveAlpn?.let { put("alpn", it) }
             node.fingerprint?.let { put("client-fingerprint", it) }
         }
     }

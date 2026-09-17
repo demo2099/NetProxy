@@ -481,7 +481,9 @@ object XrayConfigBuilder {
                     .put("serverName", node.sni ?: node.server)
                     // v26 removed allowInsecure (→ pinnedPeerCertSha256); without
                     // a pin, self-signed nodes surface as TLS dial errors instead
-                    .apply { node.alpn?.let { put("alpn", JSONArray(it)) } }
+                    // effectiveAlpn for uniformity; Xray skips anytls outright, so
+                    // this is a no-op today (see ProxyNode.effectiveAlpn).
+                    .apply { node.effectiveAlpn?.let { put("alpn", JSONArray(it)) } }
                     .apply { node.fingerprint?.let { put("fingerprint", it) } },
             )
         }

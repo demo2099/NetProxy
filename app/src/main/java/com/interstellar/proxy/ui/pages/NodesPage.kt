@@ -881,7 +881,10 @@ private fun NodeDetailSheet(item: NodeEntry, onDismiss: () -> Unit) {
                 DetailRow("摘要", n.protocolSummary())
                 n.flow?.let { DetailRow("Flow", it) }
                 n.sni?.let { DetailRow("SNI", it) }
-                n.alpn?.takeIf { it.isNotEmpty() }?.let { DetailRow("ALPN", it.joinToString(", ")) }
+                // effectiveAlpn, so the sheet shows what is actually sent to the
+                // kernel — for anytls that includes the h3 fallback the
+                // subscription itself cannot express. See ProxyNode.effectiveAlpn.
+                n.effectiveAlpn?.takeIf { it.isNotEmpty() }?.let { DetailRow("ALPN", it.joinToString(", ")) }
                 n.fingerprint?.let { DetailRow("uTLS 指纹", it) }
                 if (n.insecure == true) DetailRow("允许不安全", "是")
 

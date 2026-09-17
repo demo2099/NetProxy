@@ -386,7 +386,7 @@ object ConfigBuilder {
                     put("enabled", true)
                     node.sni?.let { put("server_name", it) } ?: put("server_name", node.server)
                     put("insecure", node.insecure ?: false)
-                    node.alpn?.let { alpn -> putJsonArray("alpn") { alpn.forEach { add(it) } } }
+                    node.effectiveAlpn?.let { alpn -> putJsonArray("alpn") { alpn.forEach { add(it) } } }
                 }
             }
 
@@ -403,7 +403,7 @@ object ConfigBuilder {
                     put("enabled", true)
                     node.sni?.let { put("server_name", it) } ?: put("server_name", node.server)
                     put("insecure", node.insecure ?: false)
-                    node.alpn?.let { alpn -> putJsonArray("alpn") { alpn.forEach { add(it) } } }
+                    node.effectiveAlpn?.let { alpn -> putJsonArray("alpn") { alpn.forEach { add(it) } } }
                 }
             }
 
@@ -470,7 +470,7 @@ object ConfigBuilder {
             val sni = node.sni ?: node.server
             put("server_name", sni)
             put("insecure", node.insecure ?: false)
-            node.alpn?.let { alpn -> putJsonArray("alpn") { alpn.forEach { add(it) } } }
+            node.effectiveAlpn?.let { alpn -> putJsonArray("alpn") { alpn.forEach { add(it) } } }
             if (node.fingerprint != null) {
                 putJsonObject("utls") {
                     put("enabled", true)
