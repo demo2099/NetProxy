@@ -307,7 +307,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Hot-switch the running core; persists smartActiveTag on success. */
+    /** Hot-switch the running core; persists smartActiveTag + drops old connections on success. */
     private suspend fun applySmartSwitch(tag: String): Boolean {
         val ok = when (Settings.coreKind) {
             CoreKind.MIHOMO -> runCatching { clashApi.select(ConfigBuilder.GROUP_TAG, tag) }.isSuccess
@@ -326,6 +326,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
         if (ok) {
             Settings.smartActiveTag = tag
+            // Same reasoning as the manual switch in selectNode(): a selector
+            // change only affects connections created *after* it. Established
+            // TCP sessions (browser keep-alive, HTTP2, IM long-polls) stay
+            // pinned to the old node, so an auto-switch that doesn't drop them
+            // looks like it never happened — which is the whole point of the
+            // feature.
+            //
+            // Safe to do on the auto path because the engine only reselects
+            // when the current exit is *already* unhealthy (patrol latency >
+            // GOOD_MS, or the exit is dead): those connections weren't working
+            // anyway, so interrupting them costs nothing real.
+            //
+            // Xray's switch-verify loop calls this up to VERIFY_ATTEMPTS times,
+            // but there dropConnections() is a no-op (no control API) and every
+            // attempt already respawns the core.
+            dropConnections()
         }
         return ok
     }

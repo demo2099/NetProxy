@@ -46,7 +46,13 @@ class SmartSwitchEngine(
     private val useSocksProxy: () -> Boolean,
     /** Request kernel group url-test + wait for settle; null if unsupported. */
     private val requestKernelDelays: (suspend () -> Map<String, Int>?)?,
-    /** Hot-switch the core onto [tag] (API or restart). */
+    /**
+     * Hot-switch the core onto [tag] (API or restart).
+     *
+     * Must also drop the old connections — a selector change only affects
+     * connections created afterwards, so without it the switch is invisible
+     * to anything already established. See [com.interstellar.proxy.ui.AppViewModel].
+     */
     private val applySwitch: suspend (tag: String) -> Boolean,
     private val pool: () -> List<com.interstellar.proxy.data.model.ProxyNode>,
     private val onStateChanged: (SmartState) -> Unit,
