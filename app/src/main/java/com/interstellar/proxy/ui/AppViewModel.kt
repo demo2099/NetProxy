@@ -1339,8 +1339,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         "链接格式不对：$detail · 需要以 http:// 或 https:// 开头"
                     detail.contains("CLEARTEXT", ignoreCase = true) ->
                         "明文 HTTP 被系统拦截：$detail"
+                    detail.contains("代理未运行") ->
+                        "「更新走代理」已开启，但代理没有在运行 · 请先连接代理，或关掉这个开关"
                     Settings.subscriptionViaProxy ->
-                        "下载失败: $detail · 已开启「更新走代理」, 请确认节点可用"
+                        "下载失败: $detail · 已开启「更新走代理」, 请确认代理已连接且节点可用"
                     else ->
                         "下载失败: $detail · 订阅域名可能无法直连, 可在订阅页打开「更新走代理」"
                 }
@@ -1489,13 +1491,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                 }
-                if (ok == subs.size) {
-                    showToast("已更新全部 $ok 个订阅", UiToast.Kind.Success)
-                } else if (ok == 0 && !Settings.subscriptionViaProxy) {
-                    // 全军覆没 + 走的是直连 —— 最可能的原因就是订阅域名被墙
-                    showToast("订阅全部更新失败 · 域名可能无法直连, 可在本页打开「更新走代理」", UiToast.Kind.Error)
-                } else {
-                    showToast("更新完成 $ok/${subs.size} 个订阅", if (ok > 0) UiToast.Kind.Success else UiToast.Kind.Error)
+                when {
+                    ok == subs.size -> showToast("已更新全部 $ok 个订阅", UiToast.Kind.Success)
+                    ok > 0 -> showToast("更新完成 $ok/${subs.size} 个订阅", UiToast.Kind.Success)
+                    // 全军覆没 —— 这是用户最需要知道「更新走代理」存在的时刻，按当前走法给不同提示
+                    Settings.subscriptionViaProxy ->
+                        showToast("订阅全部更新失败 · 已开启「更新走代理」, 请确认代理已连接", UiToast.Kind.Error)
+                    else ->
+                        showToast("订阅全部更新失败 · 域名可能无法直连, 可在本页打开「更新走代理」", UiToast.Kind.Error)
                 }
             } finally {
                 _busy.value = false

@@ -69,11 +69,11 @@ object SubscriptionFetcher {
         // 默认直连，且**不做自动回退**：走哪条路由用户的设置唯一决定。
         //   - 关（默认）：只直连。订阅更新是修代理的入口，不能依赖代理本身；
         //     而且机场面板会记录订阅请求的来源 IP，经代理会把落地 IP 暴露给面板。
-        //   - 开：只走代理（内核没跑就没代理可用，只能直连）。不回退直连是因为
-        //     用户开这个开关通常正是不想让本机 IP 出现在订阅请求里。
-        // 静默回退（无论哪个方向）都会让"实际走了哪条路"变得不可知，
-        // 失败原因也就无从判断 —— 宁可明确报错。
-        val viaProxy = com.interstellar.proxy.data.Settings.subscriptionViaProxy && coreRunning()
+        //   - 开：只走代理。代理没在跑就**明确报错**，不偷偷直连 —— 用户开这个开关
+        //     通常正是不想让本机 IP 出现在订阅请求里，静默直连等于违背设置并泄漏 IP。
+        // 两个方向都不回退：静默回退会让"实际走了哪条路"不可知，失败原因也无从判断。
+        val viaProxy = com.interstellar.proxy.data.Settings.subscriptionViaProxy
+        if (viaProxy && !coreRunning()) throw IllegalStateException("代理未运行")
         return executeCancellable(
             client = if (viaProxy) proxiedClient() else directClient(),
             request = request,
