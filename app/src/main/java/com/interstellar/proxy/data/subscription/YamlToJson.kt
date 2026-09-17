@@ -76,3 +76,24 @@ fun JsonElement?.strList(key: String): List<String>? {
         else -> null
     }
 }
+
+/**
+ * Reads a field that may be either a single scalar or an array, and always returns
+ * a list. Unlike [strList] it does NOT split a scalar on commas — the one user is
+ * an ECHConfigList, where a comma is more likely to be part of the value than a
+ * separator, and silently splitting it would corrupt the key material.
+ *
+ * Needed because the two subscription formats disagree on the shape of the same
+ * option: sing-box writes `tls.ech.config` as an array, Clash-style YAML writes an
+ * inline value as a bare string.
+ */
+fun JsonElement?.scalarOrList(key: String): List<String>? {
+    val el = (this as? JsonObject)?.get(key) ?: return null
+    return when (el) {
+        is JsonArray -> el.mapNotNull { (it as? JsonPrimitive)?.content?.ifBlank { null } }.takeIf { it.isNotEmpty() }
+        // JsonNull IS a JsonPrimitive, so this branch must come first.
+        is JsonNull -> null
+        is JsonPrimitive -> listOf(el.content).filter { it.isNotBlank() }.takeIf { it.isNotEmpty() }
+        else -> null
+    }
+}

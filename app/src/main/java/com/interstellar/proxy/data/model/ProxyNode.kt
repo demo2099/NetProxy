@@ -31,6 +31,7 @@ data class ProxyNode(
     val insecure: Boolean? = null,
     val fingerprint: String? = null,   // uTLS fingerprint
     val reality: RealityParams? = null,
+    val ech: EchParams? = null,        // see EchParams — parsed, not yet emitted
 
     // transport
     val network: String = "tcp",       // tcp | ws | http | grpc | h2 | quic
@@ -126,6 +127,38 @@ data class ProxyNode(
         val publicKey: String,
         val shortId: String? = null,
     )
+
+    /**
+     * Encrypted Client Hello, as advertised by the subscription.
+     *
+     * Non-null means "the subscription asked for ECH on this node" — a node whose
+     * panel explicitly sets `enable: false` / `enabled: false` gets `null`, so the
+     * invariant `ech != null` ⟺ intent is preserved. That matters because both
+     * consumers (the node sheet, the copy-to-clipboard dump) phrase themselves off
+     * it and would otherwise report a disabled feature as requested.
+     *
+     * It is carried here but deliberately NOT written into any kernel config yet —
+     * [com.interstellar.proxy.data.config.ConfigBuilder.EMITS_ECH] is false and the
+     * UI reads it, so the "not in effect" wording cannot rot into a lie.
+     *
+     * The decisive field is [configs]. ECH is only usable with an ECHConfigList,
+     * which the subscription either inlines or leaves to a runtime lookup of the
+     * **HTTPS RR (type 65) of the SNI domain** — not of the server domain, and a
+     * query this app has no path for at all today (it only ever resolves `server`).
+     * That lookup is the real work in enabling ECH; the handshake change is easy,
+     * and ECH fails *hard* (handshake failure, not a silent downgrade), so turning
+     * it on without a working lookup would break nodes that work today.
+     */
+    @Serializable
+    data class EchParams(
+        /** Inline ECHConfigList entries, base64. Usually absent — see class docs. */
+        val configs: List<String>? = null,
+        val pqSignatureSchemesEnabled: Boolean? = null,
+        val dynamicRecordSizingDisabled: Boolean? = null,
+    ) {
+        /** True when the key material came with the subscription instead of a DNS lookup. */
+        val hasInlineConfig: Boolean get() = !configs.isNullOrEmpty()
+    }
 
     @Serializable
     data class ShadowTlsParams(

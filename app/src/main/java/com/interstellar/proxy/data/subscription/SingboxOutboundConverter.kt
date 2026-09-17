@@ -72,6 +72,7 @@ object SingboxOutboundConverter {
                 sni = outbound.obj("tls")?.str("server_name"),
                 insecure = outbound.obj("tls")?.bool("insecure"),
                 alpn = outbound.obj("tls")?.strList("alpn"),
+                ech = outbound.obj("tls")?.echParams(),
                 tls = true,
             )
 
@@ -84,6 +85,7 @@ object SingboxOutboundConverter {
                 sni = outbound.obj("tls")?.str("server_name"),
                 insecure = outbound.obj("tls")?.bool("insecure"),
                 alpn = outbound.obj("tls")?.strList("alpn"),
+                ech = outbound.obj("tls")?.echParams(),
                 tls = true,
             )
 
@@ -118,6 +120,22 @@ object SingboxOutboundConverter {
         }
     }
 
+    /**
+     * sing-box carries ECH as `tls.ech` in snake_case, with the same "presence
+     * implies on" rule as the Clash side — see `ClashParser.echParams`. The panel
+     * emits `{"enabled":true,"pq_signature_schemes_enabled":true,...}` and no
+     * `config`, i.e. it also expects a runtime HTTPS-RR lookup.
+     */
+    private fun JsonObject.echParams(): ProxyNode.EchParams? {
+        val ech = obj("ech") ?: return null
+        if (ech.bool("enabled") == false) return null
+        return ProxyNode.EchParams(
+            configs = ech.scalarOrList("config"),
+            pqSignatureSchemesEnabled = ech.bool("pq_signature_schemes_enabled"),
+            dynamicRecordSizingDisabled = ech.bool("dynamic_record_sizing_disabled"),
+        )
+    }
+
     private fun ProxyNode.withTlsAndTransport(outbound: JsonObject, defaultTls: Boolean = false): ProxyNode {
         val tls = outbound.obj("tls")
         var node = copy(
@@ -136,6 +154,7 @@ object SingboxOutboundConverter {
                     shortId = reality.str("short_id"),
                 )
             },
+            ech = tls?.echParams(),
         )
         val transport = outbound.obj("transport")
         if (transport != null) {

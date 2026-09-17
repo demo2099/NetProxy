@@ -881,6 +881,12 @@ private fun NodeDetailSheet(item: NodeEntry, onDismiss: () -> Unit) {
                 DetailRow("摘要", n.protocolSummary())
                 n.flow?.let { DetailRow("Flow", it) }
                 n.sni?.let { DetailRow("SNI", it) }
+                // The subscription advertises ECH on some nodes and this app does
+                // not send it yet, so say so rather than let the panel's claim pass
+                // for a working feature. Deliberately NOT folded into
+                // protocolSummary(): that line describes what the kernel is given,
+                // and ECH is not in the config. See ConfigBuilder.EMITS_ECH.
+                ConfigBuilder.echStatus(n)?.let { DetailRow("ECH", it) }
                 // effectiveAlpn, so the sheet shows what is actually sent to the
                 // kernel — for anytls that includes the h3 fallback the
                 // subscription itself cannot express. See ProxyNode.effectiveAlpn.

@@ -92,6 +92,24 @@ object ClashParser {
             alpn = proxy.strList("alpn"),
             insecure = proxy.bool("skip-cert-verify"),
             fingerprint = proxy.str("client-fingerprint"),
+            ech = echParams(proxy),
+        )
+    }
+
+    /**
+     * Clash.Meta carries ECH as `ech-opts`. The block seen in the wild has no
+     * `enable` key at all — the panel emits `{pq-signature-schemes-enabled: true,
+     * dynamic-record-sizing-disabled: false}` — so the block's *presence* is what
+     * signals intent and `enable: false` is the only way to opt out. Requiring an
+     * explicit `enable: true` would drop every ECH node there is.
+     */
+    private fun echParams(proxy: JsonObject): ProxyNode.EchParams? {
+        val opts = proxy.obj("ech-opts") ?: return null
+        if (opts.bool("enable") == false) return null
+        return ProxyNode.EchParams(
+            configs = opts.scalarOrList("config") ?: opts.scalarOrList("ech-config"),
+            pqSignatureSchemesEnabled = opts.bool("pq-signature-schemes-enabled"),
+            dynamicRecordSizingDisabled = opts.bool("dynamic-record-sizing-disabled"),
         )
     }
 

@@ -465,6 +465,8 @@ object ConfigBuilder {
 
     private fun buildTls(obj: kotlinx.serialization.json.JsonObjectBuilder, node: ProxyNode) {
         if (!node.tls && node.reality == null) return
+        // No `ech` block here on purpose: node.ech is parsed and shown in the UI
+        // but not emitted. See EMITS_ECH for what has to exist before it can be.
         obj.putJsonObject("tls") {
             put("enabled", true)
             val sni = node.sni ?: node.server
@@ -637,6 +639,49 @@ object ConfigBuilder {
         } else {
             "ipv4_only · 代理流量不解析 IPv6，IPv6 目标直接拒绝"
         }
+
+    /**
+     * Whether any builder actually writes ECH into the config.
+     *
+     * ECH is parsed into the model and surfaced in the UI, but deliberately not
+     * emitted. Enabling it needs an ECHConfigList, and the panel does not inline
+     * one — it expects the client to look it up in the **HTTPS RR (type 65) of the
+     * SNI domain**, a query this app has no path for at all (it only ever resolves
+     * the `server` domain). ECH also fails *hard*: a client that cannot obtain the
+     * config, or a server that will not accept ECH, gets a handshake failure
+     * rather than a silent downgrade — so switching it on blind would break nodes
+     * that work today.
+     *
+     * The UI reads this flag, which is the point: the "当前未生效" wording cannot
+     * rot into a lie. Flip it in the same change that lands a real type-65 lookup
+     * plus a try-then-fall-back handshake.
+     */
+    const val EMITS_ECH: Boolean = false
+
+    /**
+     * One-line ECH status for the node sheet, or null when the subscription said
+     * nothing about ECH. The wording lives here, next to [EMITS_ECH], so the sheet
+     * and the diagnostics dump cannot drift apart.
+     */
+    fun echStatus(node: ProxyNode): String? = node.ech?.let { ech ->
+        val source = if (ech.hasInlineConfig) "含内联 ECHConfigList" else "需查 HTTPS RR(type 65)"
+        "订阅要求启用（$source）· ${if (EMITS_ECH) "已生效" else "当前未生效"}"
+    }
+
+    /**
+     * Which nodes advertise ECH, for the copy-to-clipboard diagnostics.
+     *
+     * One line rather than a row per node: the question being answered is "is my
+     * subscription relying on something this app ignores", and the names settle it
+     * at a glance. Silent when no node has it, so the dump does not grow noise for
+     * the majority of subscriptions.
+     */
+    fun echSummary(nodes: List<ProxyNode>): String? {
+        val withEch = nodes.filter { it.ech != null }
+        if (withEch.isEmpty()) return null
+        return "${withEch.size} 个: ${withEch.joinToString(", ") { it.name }} · " +
+            "订阅要求启用 · ${if (EMITS_ECH) "已生效" else "当前未生效"}"
+    }
 
     /** nodeId → outbound tag for the current node pool. */
     private fun resolveSimpleRules(

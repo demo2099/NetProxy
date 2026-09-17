@@ -140,6 +140,10 @@ class LogsViewModel(application: Application) : AndroidViewModel(application) {
                 appendLine("内核 ${Settings.coreKind.displayName}")
                 appendLine("节点数 ${nodes.size}")
                 appendLine("IPv6 策略 ${ConfigBuilder.ipv6PolicySummary(Settings.outboundMode)}")
+                // ECH is parsed and shown but not emitted — list the nodes whose
+                // subscription asks for it, so "the panel advertises X and we
+                // silently ignore it" is visible from the dump alone.
+                ConfigBuilder.echSummary(nodes)?.let { appendLine("ECH 节点 $it") }
                 SubscriptionRepository.lastConfigError?.let { appendLine("上次生成配置报错: $it") }
                 appendLine()
                 // The config the kernel is actually running. The 0.6.3 dump
