@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.interstellar.proxy.BuildConfig
 import com.interstellar.proxy.core.AppLog
 import com.interstellar.proxy.core.CoreKind
+import com.interstellar.proxy.data.ConfigStore
 import com.interstellar.proxy.data.Settings
 import com.interstellar.proxy.data.SubscriptionRepository
 import com.interstellar.proxy.data.config.ConfigBuilder
@@ -138,8 +139,18 @@ class LogsViewModel(application: Application) : AndroidViewModel(application) {
                 appendLine("版本 ${BuildConfig.VERSION_NAME}")
                 appendLine("内核 ${Settings.coreKind.displayName}")
                 appendLine("节点数 ${nodes.size}")
+                appendLine("IPv6 策略 ${ConfigBuilder.ipv6PolicySummary(Settings.outboundMode)}")
                 SubscriptionRepository.lastConfigError?.let { appendLine("上次生成配置报错: $it") }
                 appendLine()
+                // The config the kernel is actually running. The 0.6.3 dump
+                // carried every node's outbound JSON but neither the DNS policy
+                // nor the route rules — and the IPv6 bug lived in exactly the
+                // part that was missing.
+                ConfigStore.readActiveConfig()?.let { config ->
+                    appendLine("--- 当前内核配置 ---")
+                    appendLine(config.take(120_000))
+                    appendLine()
+                }
                 nodes.forEachIndexed { index, node ->
                     val tag = tags.getOrNull(index) ?: node.name
                     appendLine("--- ${node.name} · ${node.type.wire} · tag=$tag ---")

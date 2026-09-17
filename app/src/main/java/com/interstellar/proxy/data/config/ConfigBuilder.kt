@@ -598,9 +598,45 @@ object ConfigBuilder {
             }
         }
         put("final", if (options.mode == OutboundMode.GLOBAL) "dns-remote" else "dns-remote")
-        put("strategy", "prefer_ipv4")
+        put("strategy", dnsStrategy(options))
         put("independent_cache", true)
     }
+
+    /**
+     * IPv6 policy — the third core finally agreeing with the other two.
+     *
+     * mihomo is built with `dns.ipv6: false` and Xray with `queryStrategy:
+     * UseIPv4`; sing-box was the only core still resolving AAAA. That is not a
+     * cosmetic difference. A node with no IPv6 egress cannot serve an IPv6
+     * destination: the far end answers
+     *
+     *     remote: open connection to 2001:...:443 using outbound/direct[direct]:
+     *             dial tcp 2001:...:443: connect: network is unreachable
+     *
+     * while the very same node is perfectly healthy over IPv4 (urltest reports
+     * it available in ~130ms). A dual-stack app such as Chrome prefers the
+     * AAAA, so the page simply never loads — which is exactly the reported
+     * "HKA / HKJ / USY don't work, the others do" pattern.
+     *
+     * `prefer_ipv4` does NOT prevent this: it still returns the AAAA alongside
+     * the A. `ipv4_only` queries A only, so no node is ever handed an IPv6
+     * destination. sing-box has no per-server strategy override — verified
+     * against the pinned kernel, `dns.servers[].strategy` is rejected as an
+     * unknown field — so this one switch is global.
+     *
+     * DIRECT mode keeps `prefer_ipv4`: nothing is proxied there, so the
+     * device's own IPv6 connectivity is a feature rather than a liability.
+     */
+    private fun dnsStrategy(options: BuildOptions): String =
+        if (options.mode == OutboundMode.DIRECT) "prefer_ipv4" else "ipv4_only"
+
+    /** One-line form of [dnsStrategy] for the copy-to-clipboard diagnostics. */
+    fun ipv6PolicySummary(mode: OutboundMode): String =
+        if (mode == OutboundMode.DIRECT) {
+            "prefer_ipv4 · 直连模式，保留 IPv6"
+        } else {
+            "ipv4_only · 代理流量不解析 IPv6，IPv6 目标直接拒绝"
+        }
 
     /** nodeId → outbound tag for the current node pool. */
     private fun resolveSimpleRules(
@@ -689,6 +725,28 @@ object ConfigBuilder {
                             add("geoip-cn")
                         }
                         put("outbound", DIRECT_TAG)
+                    },
+                )
+            }
+            // IPv6 safety net — see [dnsStrategy]. DNS already refuses to hand
+            // out AAAA, but that only covers names resolved through this
+            // config. An app that resolves on its own (Chrome's Secure DNS),
+            // a hardcoded literal, or a stale AAAA cache still arrives at the
+            // tun with an IPv6 destination. Passing that to a node without
+            // IPv6 egress wastes a full timeout at the far end; rejecting it
+            // here fails instantly, so Happy Eyeballs drops straight back to
+            // IPv4 and the page loads.
+            //
+            // Deliberately the LAST rule: every explicit DIRECT path above
+            // (LAN, ads, user rules, CN bypass) is matched first and keeps its
+            // native IPv6 — only traffic that would otherwise have been
+            // proxied is affected. DIRECT mode proxies nothing at all, so the
+            // rule is skipped there entirely.
+            if (options.mode != OutboundMode.DIRECT) {
+                add(
+                    buildJsonObject {
+                        put("ip_version", 6)
+                        put("action", "reject")
                     },
                 )
             }
