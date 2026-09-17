@@ -34,8 +34,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -51,6 +49,7 @@ import com.interstellar.proxy.data.SubscriptionRepository
 import com.interstellar.proxy.data.UpdateWorker
 import com.interstellar.proxy.ui.AppViewModel
 import com.interstellar.proxy.ui.components.IosCard
+import com.interstellar.proxy.ui.components.IosHairline
 import com.interstellar.proxy.ui.components.IosSectionFooter
 import com.interstellar.proxy.ui.components.IosSectionLabel
 import com.interstellar.proxy.ui.components.IosToggleRow
@@ -77,6 +76,7 @@ fun SubscriptionsPage(viewModel: AppViewModel) {
     var deleteTarget by remember { mutableStateOf<SubscriptionRepository.Subscription?>(null) }
     var autoUpdate by remember { mutableStateOf(Settings.autoUpdateEnabled) }
     var interval by remember { mutableStateOf(Settings.autoUpdateIntervalHours) }
+    var updateViaProxy by remember { mutableStateOf(Settings.subscriptionViaProxy) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         PullToRefreshBox(
@@ -123,7 +123,7 @@ fun SubscriptionsPage(viewModel: AppViewModel) {
             IosSectionFooter("开启后节点池为所有勾选订阅的合集,节点页会标注来源;流量与到期仍按订阅独立显示。")
 
             Spacer(Modifier.height(8.dp))
-            IosSectionLabel("自动更新")
+            IosSectionLabel("订阅更新")
             IosCard(modifier = Modifier.fillMaxWidth()) {
                 Column {
                     IosToggleRow(
@@ -149,9 +149,23 @@ fun SubscriptionsPage(viewModel: AppViewModel) {
                             )
                         }
                     }
+                    IosHairline()
+                    IosToggleRow(
+                        title = "更新走代理",
+                        subtitle = if (updateViaProxy) {
+                            "订阅请求经所选节点发出"
+                        } else {
+                            "直连更新:代理坏了也还能换节点"
+                        },
+                        checked = updateViaProxy,
+                        onChange = {
+                            updateViaProxy = it
+                            Settings.subscriptionViaProxy = it
+                        },
+                    )
                 }
             }
-            IosSectionFooter("在后台定时刷新订阅,内核运行时自动热重载生效。")
+            IosSectionFooter("自动更新在后台定时刷新,内核运行时热重载生效。更新默认直连(节点全挂时仍能更新订阅换节点);订阅域名被墙、直连拿不到时才需要打开「更新走代理」。")
 
             Spacer(Modifier.height(8.dp))
             IosSectionLabel("订阅")

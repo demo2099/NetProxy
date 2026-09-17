@@ -318,6 +318,24 @@ object Settings {
             commit()
         }
 
+    /**
+     * 订阅更新是否走代理。**默认关（直连）**，两个原因：
+     *
+     * 1. 订阅更新是"代理坏了之后"的修复入口 —— 节点全挂时，更新订阅正是唯一出路，
+     *    这条路不能依赖节点本身，否则自锁（走代理更新 → 代理不通 → 更新不了 → 换不了节点）。
+     * 2. 机场面板会记录订阅请求的来源 IP。经代理更新等于把落地 IP 写进面板的订阅日志，
+     *    部分面板会据此判定多设备/共享。
+     *
+     * 只有订阅域名被墙、直连拿不到时才需要打开。打开后**严格走代理，不再回退直连**
+     * —— 用户开它通常就是为了不暴露本机 IP。
+     */
+    var subscriptionViaProxy: Boolean
+        get() = properties.getProperty("subscriptionViaProxy", "false").toBoolean()
+        set(value) {
+            properties.setProperty("subscriptionViaProxy", value.toString())
+            commit()
+        }
+
     /** Fingerprint of the last clipboard text the import banner was shown for; the same clip won't re-prompt. */
     var lastImportPromptClip: String
         get() = properties.getProperty("lastImportPromptClip", "")

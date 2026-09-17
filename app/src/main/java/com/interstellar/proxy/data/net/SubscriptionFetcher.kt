@@ -15,8 +15,9 @@ import java.util.concurrent.TimeUnit
  * with the device model appended so the panel's subscribe log can tell devices apart.
  * See [USER_AGENT] — the clash-verge part must not change.
  *
- * When the core is running, requests go through the local mixed inbound
- * (127.0.0.1:2080) so they ride the selected node; falls back to direct.
+ * 默认**直连**，不跟随内核状态。订阅更新是"代理坏了之后"的修复入口，走代理等于自锁
+ * —— 节点全挂时更新订阅正是唯一出路。只有用户显式打开「更新走代理」才走
+ * 127.0.0.1:2080 的混合入站（见 [fetch]）。
  */
 object SubscriptionFetcher {
     private const val MIXED_PORT = 2080
@@ -65,17 +66,19 @@ object SubscriptionFetcher {
             .header("User-Agent", USER_AGENT)
             .build()
 
-        val throughProxy = coreRunning()
-        if (throughProxy) {
-            try {
-                return executeCancellable(proxiedClient(), request, viaProxy = true)
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                // proxy path failed (node down / core stopping) — retry direct
-            }
-        }
-        return executeCancellable(directClient(), request, viaProxy = false)
+        // 默认直连，且**不做自动回退**：走哪条路由用户的设置唯一决定。
+        //   - 关（默认）：只直连。订阅更新是修代理的入口，不能依赖代理本身；
+        //     而且机场面板会记录订阅请求的来源 IP，经代理会把落地 IP 暴露给面板。
+        //   - 开：只走代理（内核没跑就没代理可用，只能直连）。不回退直连是因为
+        //     用户开这个开关通常正是不想让本机 IP 出现在订阅请求里。
+        // 静默回退（无论哪个方向）都会让"实际走了哪条路"变得不可知，
+        // 失败原因也就无从判断 —— 宁可明确报错。
+        val viaProxy = com.interstellar.proxy.data.Settings.subscriptionViaProxy && coreRunning()
+        return executeCancellable(
+            client = if (viaProxy) proxiedClient() else directClient(),
+            request = request,
+            viaProxy = viaProxy,
+        )
     }
 
     /** Enqueue + invokeOnCancellation so the dialog's 取消 aborts the socket. */

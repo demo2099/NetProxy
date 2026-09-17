@@ -118,13 +118,14 @@ object NetProbe {
 
     /**
      * Race all endpoints on the given path; first valid answer wins.
-     * Falls back to direct when the proxy path fails entirely.
+     *
+     * 内核在跑就**只**走代理，失败也不回退直连。这个探测叫"出口 IP"：直连拿到的是
+     * 运营商出口，不是所选节点的出口 —— 把它当成一个正常结果展示是错误信息，不是
+     * 降级结果（用户会据此以为节点生效了/没生效）。失败就如实报失败。
+     * 内核没跑时没有代理可用，直连才是当前唯一的真实出口。
      */
     suspend fun probe(): Result = withContext(Dispatchers.IO) {
-        if (coreRunning()) {
-            runCatching { race(viaProxy = true) }.getOrNull()?.let { return@withContext it }
-        }
-        race(viaProxy = false)
+        race(viaProxy = coreRunning())
     }
 
     private suspend fun race(viaProxy: Boolean): Result = coroutineScope {
@@ -146,7 +147,7 @@ object NetProbe {
                 }.getOrNull()
             }
         }.map { it.await() }.firstOrNull { it != null }
-        winner ?: error("所有探测端点均失败")
+        winner ?: error(if (viaProxy) "代理不通: 所有探测端点均无响应" else "所有探测端点均失败")
     }
 
     private fun regexGroup(body: String, pattern: String): String? =
