@@ -333,17 +333,26 @@ class BoxService(private val service: Service, private val platformInterface: Pl
     @Suppress("SameReturnValue")
     internal fun onStartCommand(): Int {
         when (status.value) {
-            Status.Starting, Status.Started -> return Service.START_NOT_STICKY
+            // 已经在跑：重复的 start 命令。这里也必须返回 STICKY —— 每次
+            // onStartCommand 的返回值都会**覆盖**"被系统杀掉后要不要重建"，
+            // 返回 NOT_STICKY 会把之前设好的粘性抹掉（连点两次连接就没了）。
+            Status.Starting, Status.Started -> return Service.START_STICKY
 
             // still tearing down the previous run — run again right after
             Status.Stopping -> {
                 pendingRestart = true
-                return Service.START_NOT_STICKY
+                return Service.START_STICKY
             }
 
             null, Status.Stopped -> Unit
         }
         status.value = Status.Starting
+
+        // 必须**立刻** startForeground：Android 12+ 要求 startForegroundService()
+        // 之后 5 秒内调用，否则抛 ForegroundServiceDidNotStartInTimeException，
+        // 系统直接把进程干掉。原来这一步排在 startCore() 之后，而 mihomo 的
+        // startCore 还要解压 geosite.dat / geoip.metadb —— 冷启动是踩线过的。
+        notification.show(service.getString(R.string.app_tagline), R.string.status_starting)
 
         if (!receiverRegistered) {
             ContextCompat.registerReceiver(
@@ -370,7 +379,10 @@ class BoxService(private val service: Service, private val platformInterface: Pl
             if (status.value != Status.Starting) return@launch
             startService()
         }
-        return Service.START_NOT_STICKY
+        // STICKY：系统因内存压力杀掉进程后会**自动重建**这个服务（回调 intent 为
+        // null）。本服务本来就不看 intent、只读存档配置重启内核，所以天然适配。
+        // 用户主动断开走的是 stopSelf()，不是"被杀"，不会触发重建。
+        return Service.START_STICKY
     }
 
     internal fun onBind(): IBinder = binder

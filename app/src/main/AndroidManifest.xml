@@ -67,5 +67,19 @@
                 android:value="false" />
         </service>
 
+        <!--
+          开机自启。exported 必须为 true —— 否则系统（uid 1000）发不进来；
+          BOOT_COMPLETED 是 protected broadcast，只有系统能发，不担心被别的 App 触发。
+          是否真的恢复由 BootReceiver 里的 Settings.tileActive 决定（上次是开着的才拉起来）。
+        -->
+        <receiver
+            android:name=".bg.BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
     </application>
 </manifest>
