@@ -3,9 +3,12 @@ package com.interstellar.proxy.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.interstellar.proxy.BuildConfig
 import com.interstellar.proxy.core.AppLog
 import com.interstellar.proxy.core.CoreKind
 import com.interstellar.proxy.data.Settings
+import com.interstellar.proxy.data.SubscriptionRepository
+import com.interstellar.proxy.data.config.ConfigBuilder
 import com.interstellar.proxy.utils.CommandClient
 import com.interstellar.proxy.utils.CommandTarget
 import io.nekohasekai.libbox.LogEntry
@@ -16,6 +19,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.RandomAccessFile
 
@@ -58,19 +62,45 @@ class LogsViewModel(application: Application) : AndroidViewModel(application) {
 
     private var tailJob: Job? = null
     private var appLogJob: Job? = null
+    private var wiringJob: Job? = null
+    private var wiredKind: CoreKind? = null
     private var tailOffset = 0L
 
     fun connect() {
         startAppLogCollector()
-        if (Settings.coreKind == CoreKind.MIHOMO) {
-            startMihomoTail()
-        } else {
-            client.connect()
+        if (wiringJob?.isActive == true) return
+        wiringJob = viewModelScope.launch {
+            while (isActive) {
+                val kind = Settings.coreKind
+                if (kind != wiredKind) {
+                    // Core switched under us (the user can hot-swap engines from the
+                    // dashboard): rewire, or the page keeps showing the old core's
+                    // stream — or nothing at all.
+                    wiredKind = kind
+                    client.disconnect()
+                    tailJob?.cancel()
+                    tailJob = null
+                    if (kind == CoreKind.MIHOMO) startMihomoTail() else client.connect()
+                } else if (kind != CoreKind.MIHOMO && !_connected.value) {
+                    // The libbox command socket only exists while the core runs, and
+                    // connect() used to be called exactly once per app launch
+                    // (DisposableEffect(Unit) in AppRoot). So opening 日志 before
+                    // starting the proxy left the page permanently empty — it said
+                    // "启动内核后查看日志" even once the core was up, because nothing
+                    // ever retried. Poll until it takes; onConnected() flips
+                    // _connected and this branch stops firing.
+                    client.connect()
+                }
+                delay(RETRY_INTERVAL_MS)
+            }
         }
     }
 
     fun disconnect() {
         client.disconnect()
+        wiringJob?.cancel()
+        wiringJob = null
+        wiredKind = null
         tailJob?.cancel()
         tailJob = null
         appLogJob?.cancel()
@@ -85,6 +115,44 @@ class LogsViewModel(application: Application) : AndroidViewModel(application) {
                 runCatching { CommandTarget.standaloneClient().clearLogs() }
             }
         }
+    }
+
+    /**
+     * Self-contained diagnostic dump: what this install is running, and — for
+     * every node in the pool — the exact outbound the core would be handed.
+     *
+     * Exists because the kernel log is not always obtainable: it needs a running
+     * core, and the command socket only appears while that core is up. The
+     * generated outbound is the one artefact that answers "is the config we build
+     * for this node correct?" without the core, the network, or a live log stream
+     * — e.g. whether an anytls node carries the ALPN its server expects
+     * (see ProxyNode.effectiveAlpn), which is exactly the field the Clash
+     * subscription format cannot express.
+     */
+    suspend fun diagnosticsText(): String = withContext(Dispatchers.IO) {
+        runCatching {
+            val nodes = SubscriptionRepository.activeNodes()
+            val tags = ConfigBuilder.tagsFor(nodes)
+            buildString {
+                appendLine("=== 诊断 ===")
+                appendLine("版本 ${BuildConfig.VERSION_NAME}")
+                appendLine("内核 ${Settings.coreKind.displayName}")
+                appendLine("节点数 ${nodes.size}")
+                SubscriptionRepository.lastConfigError?.let { appendLine("上次生成配置报错: $it") }
+                appendLine()
+                nodes.forEachIndexed { index, node ->
+                    val tag = tags.getOrNull(index) ?: node.name
+                    appendLine("--- ${node.name} · ${node.type.wire} · tag=$tag ---")
+                    appendLine(
+                        // sing-box shape; effectiveAlpn is shared by all three
+                        // builders, so the ALPN question is answered either way.
+                        runCatching { ConfigBuilder.nodeToOutbound(node, tag).toString() }
+                            .getOrElse { "生成失败: ${it.message}" },
+                    )
+                    appendLine()
+                }
+            }
+        }.getOrElse { "诊断生成失败: ${it.message}" }
     }
 
     // ---- shared ----
@@ -181,5 +249,12 @@ class LogsViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
         private const val LEVEL_INFO = 4
+
+        /**
+         * How often to retry the libbox command connection while the core is down.
+         * Also the core-kind poll interval, so switching engines is picked up
+         * within a couple of seconds.
+         */
+        private const val RETRY_INTERVAL_MS = 2_000L
     }
 }

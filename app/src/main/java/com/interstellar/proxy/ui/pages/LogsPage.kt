@@ -19,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -28,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import com.interstellar.proxy.ui.LogsViewModel
 import com.interstellar.proxy.ui.theme.LocalInterstellarColors
 import com.interstellar.proxy.ui.LogLine
+import kotlinx.coroutines.launch
 
 @Composable
 fun LogsPage(viewModel: LogsViewModel) {
@@ -35,6 +37,7 @@ fun LogsPage(viewModel: LogsViewModel) {
     val logs by viewModel.logs.collectAsState()
     val connected by viewModel.connected.collectAsState()
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(logs.size) {
         if (logs.isNotEmpty()) listState.animateScrollToItem(logs.size - 1)
@@ -64,8 +67,17 @@ fun LogsPage(viewModel: LogsViewModel) {
                         .clip(RoundedCornerShape(50))
                         .background(colors.bgDeep)
                         .clickable {
-                            val text = logs.joinToString("\n") { "[${levelName(it.level)}] ${it.message}" }
-                            if (text.isNotBlank()) {
+                            // Always copy the diagnostic header too: it needs neither
+                            // a running core nor a network, so the button still yields
+                            // something usable when the kernel log is empty (which is
+                            // exactly when a user reaches for it).
+                            scope.launch {
+                                val header = viewModel.diagnosticsText()
+                                val body = logs.joinToString("\n") {
+                                    "[${levelName(it.level)}] ${it.message}"
+                                }
+                                val text =
+                                    if (body.isBlank()) header else "$header\n=== 日志 ===\n$body"
                                 com.interstellar.proxy.InterstellarApplication.clipboard.setPrimaryClip(
                                     android.content.ClipData.newPlainText("logs", text.take(380_000)),
                                 )
@@ -89,7 +101,13 @@ fun LogsPage(viewModel: LogsViewModel) {
         Spacer(Modifier.height(8.dp))
 
         if (logs.isEmpty()) {
-            EmptyHint(text = if (connected) "等待日志…" else "启动内核后查看日志")
+            EmptyHint(
+                text = if (connected) {
+                    "等待日志…"
+                } else {
+                    "启动内核后查看日志 · 点「复制」可拿到配置诊断"
+                },
+            )
             return@Column
         }
 
