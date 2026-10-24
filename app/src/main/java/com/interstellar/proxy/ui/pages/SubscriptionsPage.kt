@@ -25,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -48,6 +49,7 @@ import com.interstellar.proxy.data.Settings
 import com.interstellar.proxy.data.SubscriptionRepository
 import com.interstellar.proxy.data.UpdateWorker
 import com.interstellar.proxy.ui.AppViewModel
+import com.interstellar.proxy.ui.UiToast
 import com.interstellar.proxy.ui.components.IosCard
 import com.interstellar.proxy.ui.components.IosHairline
 import com.interstellar.proxy.ui.components.IosSectionFooter
@@ -59,6 +61,7 @@ import com.interstellar.proxy.ui.components.iosPressable
 import com.interstellar.proxy.ui.components.pressableClick
 import com.interstellar.proxy.ui.theme.LocalInterstellarColors
 import com.interstellar.proxy.ui.theme.Motion
+import com.interstellar.proxy.utils.ScanPayload
 import io.nekohasekai.libbox.Libbox
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -72,6 +75,7 @@ fun SubscriptionsPage(viewModel: AppViewModel) {
     val mixEnabled by viewModel.mixEnabled.collectAsState()
     val mixIds by viewModel.mixSubscriptionIds.collectAsState()
     var showAdd by remember { mutableStateOf(false) }
+    var showScan by remember { mutableStateOf(false) }
     var editTarget by remember { mutableStateOf<SubscriptionRepository.Subscription?>(null) }
     var deleteTarget by remember { mutableStateOf<SubscriptionRepository.Subscription?>(null) }
     var autoUpdate by remember { mutableStateOf(Settings.autoUpdateEnabled) }
@@ -94,16 +98,30 @@ fun SubscriptionsPage(viewModel: AppViewModel) {
                 kicker = "SUBSCRIPTIONS",
                 title = "订阅",
                 trailing = {
-                    Text(
-                        "＋ 添加",
-                        color = colors.accent,
-                        fontSize = 14.sp,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(50))
-                            .iosPressable { showAdd = true }
-                            .padding(horizontal = 14.dp, vertical = 9.dp),
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // 扫码导入：和小火箭首页的「扫一扫」一个位置、一个手感
+                        Icon(
+                            imageVector = Icons.Outlined.QrCodeScanner,
+                            contentDescription = "扫码添加订阅",
+                            tint = colors.accent,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .iosPressable { showScan = true }
+                                .padding(9.dp)
+                                .size(20.dp),
+                        )
+                        Spacer(Modifier.width(2.dp))
+                        Text(
+                            "＋ 添加",
+                            color = colors.accent,
+                            fontSize = 14.sp,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .iosPressable { showAdd = true }
+                                .padding(horizontal = 14.dp, vertical = 9.dp),
+                        )
+                    }
                 },
             )
 
@@ -265,6 +283,22 @@ fun SubscriptionsPage(viewModel: AppViewModel) {
             },
             onAddText = { name, text ->
                 viewModel.addSubscriptionFromText(name, text)
+            },
+        )
+    }
+
+    // 首页扫码：识别到订阅地址/节点链接就直接导入，不经过「添加订阅」对话框
+    if (showScan) {
+        QrScanDialog(
+            onDismiss = { showScan = false },
+            onScanned = { payload ->
+                showScan = false
+                when (payload) {
+                    is ScanPayload.Url -> viewModel.addSubscriptionFromUrl("", payload.url)
+                    is ScanPayload.Text -> viewModel.addSubscriptionFromText("", payload.text)
+                    is ScanPayload.Unsupported ->
+                        viewModel.showToast("${payload.reason}：${payload.raw.take(40)}", UiToast.Kind.Error)
+                }
             },
         )
     }

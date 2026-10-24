@@ -176,6 +176,15 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.charleskorn.kaml:kaml:0.104.0")
 
+    // 扫码导入订阅（2026-10-25）
+    //   CameraX 负责取景/取帧，ZXing core 负责解码。
+    //   ★ 刻意不用 ML Kit：它的条码识别走 Google Play 服务，国内机器大多没有 GMS，
+    //     扫出来永远是「正在识别…」；ZXing core 是纯 Java，零外部依赖、离线可用。
+    implementation("androidx.camera:camera-camera2:1.4.2")
+    implementation("androidx.camera:camera-lifecycle:1.4.2")
+    implementation("androidx.camera:camera-view:1.4.2")
+    implementation("com.google.zxing:core:3.5.3")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     testImplementation("junit:junit:4.13.2")

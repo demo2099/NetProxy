@@ -15,3 +15,8 @@
 -dontwarn okhttp3.**
 -dontwarn okio.**
 -dontwarn org.conscrypt.**
+
+# ZXing（扫码）：R8 会把没被直接引用的解码器裁掉，
+# MultiFormatReader 内部按 hints 选解码器，属于「间接引用」的重灾区，整包保留最省事
+-keep class com.google.zxing.** { *; }
+-dontwarn com.google.zxing.**

@@ -33,6 +33,7 @@ Android 上的**三内核**代理客户端（sing-box / mihomo / Xray 一键切�
 
 - **多格式导入**：Clash YAML / 分享链接（ss·vmess·vless·trojan·hysteria2·tuic·anytls…）/ Base64 自动嗅探
 - **导入体验**：URL（伪装 clash-verge UA，解析 `subscription-userinfo`）/ 文本导入，进行中显示进度条且可取消，失败原因在对话框内直接展示并保留输入
+- **扫码导入**：订阅页右上角扫码 / 「添加订阅」里的「扫码」，相机取景自动识别（CameraX + ZXing，**不依赖 Google Play 服务**）；支持订阅地址、`shadowrocket://add/sub://`、`clash://install-config?url=`、`sub://`、节点分享链接、整段 Base64 订阅；带手电筒与「从相册选择」，权限被拒时给出去设置的指引
 - **流量显示**：剩余流量 / 到期信息
 - **自动更新**：WorkManager 定时拉取（1/6/12/24h），运行中按内核热重载
 - **Mix 多订阅合池**：手动勾选要合并的订阅，节点合并为单一池并标注来源

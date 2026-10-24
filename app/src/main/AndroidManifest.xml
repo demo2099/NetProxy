@@ -13,6 +13,12 @@
     <!-- per-app proxy needs the full package list (sideloaded distribution) -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
+    <!-- 扫码导入订阅：只在前台取景时用，不申请存储权限（相册走系统选择器） -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- required=false：没有摄像头的设备（少数平板/模拟器）仍可安装，只是入口会提示不可用 -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+
     <application
         android:name=".InterstellarApplication"
         android:networkSecurityConfig="@xml/network_security_config"

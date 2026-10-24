@@ -11,6 +11,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.QrCodeScanner
+import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -27,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.interstellar.proxy.ui.theme.LocalInterstellarColors
+import com.interstellar.proxy.utils.ScanPayload
 
 @Composable
 fun AddSubscriptionDialog(
@@ -42,6 +46,9 @@ fun AddSubscriptionDialog(
     var url by remember { mutableStateOf("") }
     var text by remember { mutableStateOf("") }
     var mode by remember { mutableStateOf("url") } // url | text
+    var showScan by remember { mutableStateOf(false) }
+    // 扫码识别失败要就地提示（弹窗会盖住页面级 toast）
+    var scanError by remember { mutableStateOf<String?>(null) }
 
     Dialog(onDismissRequest = { if (!loading) onDismiss() }) {
         Column(
@@ -54,10 +61,32 @@ fun AddSubscriptionDialog(
 
             Spacer(Modifier.height(14.dp))
 
-            Row {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 TabChip("链接导入", mode == "url") { mode = "url" }
                 Spacer(Modifier.width(8.dp))
                 TabChip("文本导入", mode == "text") { mode = "text" }
+                Spacer(Modifier.weight(1f))
+                // 扫码入口：和小火箭的「扫一扫」一样，扫到就自动导入
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(colors.primaryMuted)
+                        .clickable(enabled = !loading) {
+                            scanError = null
+                            showScan = true
+                        }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.QrCodeScanner,
+                        contentDescription = null,
+                        tint = colors.primary,
+                        modifier = Modifier.size(15.dp),
+                    )
+                    Spacer(Modifier.width(5.dp))
+                    Text("扫码", color = colors.primary, fontSize = 12.sp)
+                }
             }
             Spacer(Modifier.height(12.dp))
 
@@ -67,7 +96,7 @@ fun AddSubscriptionDialog(
                 val context = androidx.compose.ui.platform.LocalContext.current
                 OutlinedTextField(
                     value = url,
-                    onValueChange = { url = it },
+                    onValueChange = { url = it; scanError = null },
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = { Text("http:// 或 https:// 订阅链接", color = colors.textTertiary, fontSize = 12.sp) },
                     singleLine = true,
@@ -101,7 +130,7 @@ fun AddSubscriptionDialog(
             } else {
                 OutlinedTextField(
                     value = text,
-                    onValueChange = { text = it },
+                    onValueChange = { text = it; scanError = null },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(140.dp),
@@ -127,9 +156,10 @@ fun AddSubscriptionDialog(
 
             // modal dialogs cover page-level toasts — import failures must
             // be readable in-place
-            if (!loading && error != null) {
+            val inlineError = scanError ?: error
+            if (!loading && inlineError != null) {
                 Text(
-                    error,
+                    inlineError,
                     color = colors.danger,
                     fontSize = 12.sp,
                     maxLines = 2,
@@ -168,6 +198,33 @@ fun AddSubscriptionDialog(
                     }
                 }
             }
+        }
+
+        // 扫码：识别成功就直接走导入（小火箭的行为），失败则留在本对话框里提示原因
+        if (showScan) {
+            QrScanDialog(
+                onDismiss = { showScan = false },
+                onScanned = { payload ->
+                    showScan = false
+                    when (payload) {
+                        is ScanPayload.Url -> {
+                            url = payload.url
+                            mode = "url"
+                            scanError = null
+                            onAddUrl(name, payload.url)
+                        }
+                        is ScanPayload.Text -> {
+                            text = payload.text
+                            mode = "text"
+                            scanError = null
+                            onAddText(name, payload.text)
+                        }
+                        is ScanPayload.Unsupported -> {
+                            scanError = "${payload.reason}：${payload.raw.take(60)}"
+                        }
+                    }
+                },
+            )
         }
     }
 }
