@@ -126,7 +126,7 @@ fun LogsPage(viewModel: LogsViewModel) {
         if (logs.isEmpty()) {
             EmptyHint(
                 text = when {
-                    filter == LogsViewModel.FILTER_OFF -> "日志已关闭 · 点上方「已关闭」恢复"
+                    filter == LogsViewModel.FILTER_OFF -> "日志已关闭（默认不记录）· 点上方「已关闭」开启"
                     connected -> "等待日志…"
                     filter != LogsViewModel.FILTER_ALL -> "未运行 · 当前档位下没有匹配的日志"
                     else -> "启动内核后查看日志 · 点「复制」可拿到配置诊断"

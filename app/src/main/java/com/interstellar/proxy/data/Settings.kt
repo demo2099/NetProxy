@@ -262,10 +262,11 @@ object Settings {
      *   3 = 关闭 —— 连日志管道一起断掉：不订阅 libbox 的 Log 连接、不 tail
      *       mihomo 日志文件、不收集应用日志，不只是「界面上不显示」
      *
-     * 默认全部：日志是排障的唯一线索，默认静音等于把用户的手电筒关掉。
+     * 默认关闭：日志是高频写入，挂机时既费电又占内存；要排障时在日志页
+     * 点一下档位按钮即可打开，选择会被记住（这里只是「没存过」时的初值）。
      */
     var logFilter: Int
-        get() = properties.getProperty("logFilter", "0").toIntOrNull()?.coerceIn(0, 3) ?: 0
+        get() = properties.getProperty("logFilter", "3").toIntOrNull()?.coerceIn(0, 3) ?: 3
         set(value) {
             properties.setProperty("logFilter", value.coerceIn(0, 3).toString())
             commit()
