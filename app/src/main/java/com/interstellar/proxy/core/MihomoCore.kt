@@ -239,8 +239,8 @@ class MihomoCore(
         private const val TAG = "MihomoCore"
         // 控制端口不再是常量：9090 被别的进程占着就换，见 ApiPort。
         // （以前写死 9090，结果是 mihomo 的 external-controller 绑不上 → 直接退出）
-        /** must match ConfigBuilder.BuildOptions.mixedPort default */
-        const val MIXED_PORT = 2080
+        // 混合入站同理，2080 被占就换，见 LocalPort。
+        val MIXED_PORT: Int get() = LocalPort.current
         private const val READY_POLLS = 20
         private const val READY_INTERVAL_MS = 500L
     }

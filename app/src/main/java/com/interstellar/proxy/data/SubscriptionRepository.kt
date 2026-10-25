@@ -200,6 +200,9 @@ object SubscriptionRepository {
             // 控制端口每次生成配置时探一次（9090 被占就换一个）—— 必须在这里定，
             // 因为它要烘焙进配置；内核起来之后 ClashApiClient 读的也是同一个值。
             apiPort = com.interstellar.proxy.core.ApiPort.acquire(),
+            // 混合入站同理：2080 被别的 Clash 客户端（或上次没退干净的 sidecar）占着时，
+            // 内核会直接拒绝启动（listen ... bind: address already in use），一个节点都起不来。
+            mixedPort = com.interstellar.proxy.core.LocalPort.acquire(),
             apiSecret = Settings.apiSecret,
             customRules = CustomRulesStore.rules.toList(),
             dnsOverrides = DnsOverridesStore.enabled(),

@@ -42,7 +42,8 @@ import java.util.concurrent.atomic.AtomicInteger
 class SmartSwitchEngine(
     private val isActive: () -> Boolean,
     private val currentTag: () -> String?,
-    private val socksPort: Int,
+    /** 混合入站端口用 lambda：2080 被占时 LocalPort 会换端口，构造时取值会取到旧的。 */
+    private val socksPort: () -> Int,
     private val useSocksProxy: () -> Boolean,
     /** Request kernel group url-test + wait for settle; null if unsupported. */
     private val requestKernelDelays: (suspend () -> Map<String, Int>?)?,
@@ -104,7 +105,7 @@ class SmartSwitchEngine(
         .proxy(
             Proxy(
                 if (useSocksProxy()) Proxy.Type.SOCKS else Proxy.Type.HTTP,
-                InetSocketAddress("127.0.0.1", socksPort),
+                InetSocketAddress("127.0.0.1", socksPort()),
             ),
         )
         .build()

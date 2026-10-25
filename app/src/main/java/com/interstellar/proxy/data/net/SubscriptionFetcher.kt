@@ -20,7 +20,8 @@ import java.util.concurrent.TimeUnit
  * 127.0.0.1:2080 的混合入站（见 [fetch]）。
  */
 object SubscriptionFetcher {
-    private const val MIXED_PORT = 2080
+    // 跟着内核实际监听的端口走（2080 被占时会被 LocalPort 换掉），写死会连到空端口
+    private val MIXED_PORT: Int get() = com.interstellar.proxy.core.LocalPort.current
 
     private fun directClient(): OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(5, TimeUnit.SECONDS)

@@ -241,6 +241,19 @@ object Settings {
             commit()
         }
 
+    /**
+     * 混合入站端口（2080 被占时会被 [com.interstellar.proxy.core.LocalPort] 换成别的）。
+     *
+     * 同样必须持久化：端口已经烘焙进配置，TUN 桥和探测客户端读的也是这个值；
+     * 进程被系统杀掉后重启，配置里烘焙的端口和这里的值还得对得上。
+     */
+    var mixedPort: Int
+        get() = properties.getProperty("mixedPort", "2080").toIntOrNull() ?: 2080
+        set(value) {
+            properties.setProperty("mixedPort", value.toString())
+            commit()
+        }
+
     var themeMode: String
         get() = properties.getProperty("themeMode", "light")
         set(value) {

@@ -145,6 +145,7 @@ app/src/main/java/com/interstellar/proxy/
 - 三内核统一抽象（`ProxyCore` / `CoreHost`），UI 与内核解耦；sidecar 经 `nativeLibraryDir` exec（W^X 合规路径）
 - sidecar TUN 桥：Android 子进程继承 fd 受限，hev-socks5-tunnel 以 JNI 进程内库读 TUN 转 socks5（v2rayNG 方案）
 - 运行中切内核：停止 → 重生成 → 自动重启（`pendingRestart` 吸收停止竞态）
+- 端口冲突自动规避：控制端口（9090）与混合入站（2080）在生成配置前各自 bind 探测，被占就换空闲端口并持久化（`ApiPort` / `LocalPort`）。内核把「端口绑不上」当致命错误 —— 一个节点都起不来，而原文只有一句英文，所以这两处都不能写死
 - 已知取舍：sidecar 内核（mihomo/Xray）的 DIRECT 出站无法跨进程 `protect()`，「绕过大陆」下国内站点经代理出国（sing-box 不受影响）；Xray v26 移除 `allowInsecure`，自签证书节点报 TLS 错
 - 技术栈：Kotlin + Jetpack Compose（Material3）、kotlinx-serialization、kaml、OkHttp、WorkManager
 

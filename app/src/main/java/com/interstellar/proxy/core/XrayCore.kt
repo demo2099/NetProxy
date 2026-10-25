@@ -186,8 +186,8 @@ class XrayCore(
 
     companion object {
         private const val TAG = "XrayCore"
-        /** must match ConfigBuilder.BuildOptions.mixedPort default */
-        const val SOCKS_PORT = 2080
+        // 2080 被别的进程占着就换（见 LocalPort）—— 写死会让整个配置起不来
+        val SOCKS_PORT: Int get() = LocalPort.current
         private const val READY_POLLS = 20
         private const val READY_INTERVAL_MS = 500L
     }

@@ -27,7 +27,8 @@ object NetProbe {
         val viaProxy: Boolean,
     )
 
-    private const val MIXED_PORT = 2080
+    // 端口跟着内核走：2080 被占时 LocalPort 会换一个，写死就会探测到没人监听的端口
+    private val MIXED_PORT: Int get() = com.interstellar.proxy.core.LocalPort.current
     private const val TIMEOUT_SECONDS = 8L
 
     private data class Endpoint(

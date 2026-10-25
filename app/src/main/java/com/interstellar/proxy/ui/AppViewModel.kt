@@ -267,7 +267,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     Settings.selectedOutboundTag == com.interstellar.proxy.data.config.ConfigBuilder.SMART_TAG
             },
             currentTag = { smartCurrentTag() },
-            socksPort = 2080,
+            socksPort = { com.interstellar.proxy.core.LocalPort.current },
             useSocksProxy = { Settings.coreKind == CoreKind.XRAY },
             requestKernelDelays = { requestKernelGroupDelays() },
             applySwitch = { tag -> applySmartSwitch(tag) },
