@@ -254,6 +254,23 @@ object Settings {
             commit()
         }
 
+    /**
+     * 日志过滤档位：
+     *   0 = 全部（panic…trace）
+     *   1 = 警告及以上（panic/fatal/error/warn）
+     *   2 = 仅错误（panic/fatal/error）
+     *   3 = 关闭 —— 连日志管道一起断掉：不订阅 libbox 的 Log 连接、不 tail
+     *       mihomo 日志文件、不收集应用日志，不只是「界面上不显示」
+     *
+     * 默认全部：日志是排障的唯一线索，默认静音等于把用户的手电筒关掉。
+     */
+    var logFilter: Int
+        get() = properties.getProperty("logFilter", "0").toIntOrNull()?.coerceIn(0, 3) ?: 0
+        set(value) {
+            properties.setProperty("logFilter", value.coerceIn(0, 3).toString())
+            commit()
+        }
+
     var themeMode: String
         get() = properties.getProperty("themeMode", "light")
         set(value) {

@@ -36,6 +36,7 @@ fun LogsPage(viewModel: LogsViewModel) {
     val colors = LocalInterstellarColors.current
     val logs by viewModel.logs.collectAsState()
     val connected by viewModel.connected.collectAsState()
+    val filter by viewModel.filter.collectAsState()
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
@@ -62,6 +63,28 @@ fun LogsPage(viewModel: LogsViewModel) {
             }
             Spacer(Modifier.padding(4.dp))
             Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                // 级别筛选：点一下切下一档（全部 → 警告+ → 仅错误 → 关闭 → 全部）。
+                // 「关闭」不只是不显示 —— ViewModel 会把日志管道一起停掉。
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(
+                            if (filter == LogsViewModel.FILTER_OFF) colors.dangerMuted else colors.bgDeep,
+                        )
+                        .clickable { viewModel.setFilter((filter + 1) % 4) }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                ) {
+                    Text(
+                        text = when (filter) {
+                            LogsViewModel.FILTER_WARN -> "警告+"
+                            LogsViewModel.FILTER_ERROR -> "仅错误"
+                            LogsViewModel.FILTER_OFF -> "已关闭"
+                            else -> "全部"
+                        },
+                        color = if (filter == LogsViewModel.FILTER_OFF) colors.danger else colors.textSecondary,
+                        fontSize = 12.sp,
+                    )
+                }
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(50))
@@ -102,10 +125,11 @@ fun LogsPage(viewModel: LogsViewModel) {
 
         if (logs.isEmpty()) {
             EmptyHint(
-                text = if (connected) {
-                    "等待日志…"
-                } else {
-                    "启动内核后查看日志 · 点「复制」可拿到配置诊断"
+                text = when {
+                    filter == LogsViewModel.FILTER_OFF -> "日志已关闭 · 点上方「已关闭」恢复"
+                    connected -> "等待日志…"
+                    filter != LogsViewModel.FILTER_ALL -> "未运行 · 当前档位下没有匹配的日志"
+                    else -> "启动内核后查看日志 · 点「复制」可拿到配置诊断"
                 },
             )
             return@Column

@@ -34,6 +34,10 @@ class LogsViewModel(application: Application) : AndroidViewModel(application) {
     private val _connected = MutableStateFlow(false)
     val connected: StateFlow<Boolean> = _connected
 
+    /** 当前过滤档位（见 [Settings.logFilter]），界面上的切换按钮读它。 */
+    private val _filter = MutableStateFlow(Settings.logFilter)
+    val filter: StateFlow<Int> = _filter
+
     private var buffer = ArrayDeque<LogLine>()
 
     private val client = CommandClient(
@@ -63,11 +67,17 @@ class LogsViewModel(application: Application) : AndroidViewModel(application) {
 
     private var tailJob: Job? = null
     private var appLogJob: Job? = null
+
+    /** 最后一条已收下的 AppLog 行 —— 用来补历史时只补「新」的，不重复。 */
+    private var lastAppLine: String? = null
     private var wiringJob: Job? = null
     private var wiredKind: CoreKind? = null
     private var tailOffset = 0L
 
     fun connect() {
+        // 关闭档位：连日志管道都不建 —— 不订阅 libbox 的 Log 连接、不 tail
+        // mihomo 日志文件、不收集 AppLog，而不是「收下来再扔掉」
+        if (Settings.logFilter == FILTER_OFF) return
         startAppLogCollector()
         if (wiringJob?.isActive == true) return
         wiringJob = viewModelScope.launch {
@@ -116,6 +126,42 @@ class LogsViewModel(application: Application) : AndroidViewModel(application) {
                 runCatching { CommandTarget.standaloneClient().clearLogs() }
             }
         }
+    }
+
+    /**
+     * 切换过滤档位。关闭时把收集管道一起停掉（真省 CPU/内存），恢复时重建。
+     * 注意：档位存进 Settings，切走页面再回来仍然生效。
+     */
+    fun setFilter(value: Int) {
+        val next = value.coerceIn(FILTER_ALL, FILTER_OFF)
+        if (next == Settings.logFilter) return
+        Settings.logFilter = next
+        _filter.value = next
+        if (next == FILTER_OFF) {
+            // 缓冲一起清掉：留着既白占内存，恢复时又会把「关闭期间之前」的
+            // 老日志突然吐回来 —— 界面上「已关闭」就该是真的什么都没在记。
+            buffer.clear()
+            _logs.value = emptyList()
+            stopCollectors()
+        } else {
+            // 已经攒下的历史按新档位重算，不用等新日志
+            _logs.value = buffer.filter { passes(it.level, next) }
+            stopCollectors()
+            connect()
+        }
+    }
+
+    /** 停掉所有日志来源：Log 连接、mihomo tail、AppLog 收集、内核类型轮询。 */
+    private fun stopCollectors() {
+        client.disconnect()
+        wiringJob?.cancel()
+        wiringJob = null
+        wiredKind = null
+        tailJob?.cancel()
+        tailJob = null
+        appLogJob?.cancel()
+        appLogJob = null
+        _connected.value = false
     }
 
     /**
@@ -173,19 +219,46 @@ class LogsViewModel(application: Application) : AndroidViewModel(application) {
     // ---- shared ----
 
     private fun append(line: LogLine) {
+        // 用 _filter 而不是每次读 Settings：内核日志是高频写入，
+        // 每行都去 properties 里 parse 一遍没必要（setFilter 会同步两者）。
+        val filter = _filter.value
+        if (filter == FILTER_OFF) return
         buffer.addLast(line)
-        while (buffer.size > 3000) buffer.removeFirst()
-        _logs.value = buffer.toList()
+        while (buffer.size > LIMIT) buffer.removeFirst()
+        // 只有通过过滤的行才重建展示列表；被过滤掉的行连列表都不碰。
+        // （原来是每条日志都 `buffer.toList()`，连「仅错误」档位也在拷 3000 行）
+        if (passes(line.level, filter)) {
+            val next = _logs.value + line
+            _logs.value = if (next.size > LIMIT) next.takeLast(LIMIT) else next
+        }
+    }
+
+    /** 当前档位下这一行要不要显示。级别数值越小越严重（0=panic … 6=trace）。 */
+    private fun passes(level: Int, filter: Int = _filter.value): Boolean = when (filter) {
+        FILTER_OFF -> false
+        FILTER_WARN -> level <= LEVEL_WARN
+        FILTER_ERROR -> level <= LEVEL_ERROR
+        else -> true
     }
 
     private fun startAppLogCollector() {
         if (appLogJob?.isActive == true) return
-        AppLog.snapshot.forEach { append(LogLine(LEVEL_INFO, "[app] $it", System.currentTimeMillis())) }
+        // 补历史时只补「上次收到之后」的那一段：切档位会走
+        // stopCollectors + connect，每次都灌一遍 snapshot 的话，
+        // 每切一次档位日志就整体重复一份。
+        val snap = AppLog.snapshot
+        val from = lastAppLine
+            ?.let { last -> snap.indexOf(last).let { if (it >= 0) it + 1 else 0 } }
+            ?: 0
+        snap.drop(from).forEach { ingestAppLine(it) }
         appLogJob = viewModelScope.launch {
-            AppLog.events.collect { line ->
-                append(LogLine(LEVEL_INFO, "[app] $line", System.currentTimeMillis()))
-            }
+            AppLog.events.collect { ingestAppLine(it) }
         }
+    }
+
+    private fun ingestAppLine(line: String) {
+        lastAppLine = line
+        append(LogLine(LEVEL_INFO, "[app] $line", System.currentTimeMillis()))
     }
 
     // ---- mihomo: tail the sidecar log file ----
@@ -264,6 +337,18 @@ class LogsViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
         private const val LEVEL_INFO = 4
+
+        /** 级别数值越小越严重：sing-box 与 mihomo 都用 logrus 那套 0..6。 */
+        private const val LEVEL_ERROR = 2
+        private const val LEVEL_WARN = 3
+
+        /** 与 [Settings.logFilter] 一一对应。 */
+        const val FILTER_ALL = 0
+        const val FILTER_WARN = 1
+        const val FILTER_ERROR = 2
+        const val FILTER_OFF = 3
+
+        private const val LIMIT = 3000
 
         /**
          * How often to retry the libbox command connection while the core is down.
