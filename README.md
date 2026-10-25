@@ -134,6 +134,12 @@ app/src/main/java/com/interstellar/proxy/
    - sidecar 内核按版本 pin 缓存（mihomo/hev 源码编译，Xray 官方下载）
    - 正式签名需 repo secrets（`INTERSTELLAR_KEYSTORE_B64` 等），未配置回退 debug 签名
 
+4. **同步自建镜像**（应用内更新的回退源，GitHub 直连不通时用）：
+   - 从 Release 取 `interstellar-slim-universal-release.apk`，放到服务器 `dl/` 下并**重命名成带版本的名字**，例如 `netproxy-slim-universal-0.8.0.apk`
+     - 文件名不带 `-latest` 的会被 `/dl/` 打上一年 `immutable` 缓存，所以必须靠版本号区分，不能覆盖同名文件
+   - 更新 `dl/netproxy-latest.json`：`version`、`assets[0].size`、`assets[0].sha256`、`assets[0].url` 指向新包
+     - 这个文件**必须**叫 `*-latest.json`，只有带 `-latest` 才按 1 小时缓存，换版后客户端能立刻看到
+
 ## 技术要点
 
 - 三内核统一抽象（`ProxyCore` / `CoreHost`），UI 与内核解耦；sidecar 经 `nativeLibraryDir` exec（W^X 合规路径）
