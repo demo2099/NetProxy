@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  应用内更新的 APK 落点：cacheDir/update/app.apk（见 AppUpdater.download）。
+  FileProvider 只暴露这一个目录，别的私有文件仍然拿不到。
+-->
+<paths>
+    <cache-path name="update" path="update/" />
+</paths>

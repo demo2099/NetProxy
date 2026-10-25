@@ -29,6 +29,14 @@ Android 上的**三内核**代理客户端（sing-box / mihomo / Xray 一键切�
 - **防环**：节点服务器 IP + 国内 DNS 自动排除出 VPN 路由；GEOSITE/GEOIP 数据库随 APK 打包（mihomo 用 metadb，Xray 用 v2fly dat），冷启动无需联网下载
 - **DNS**：sing-box typed DNS；mihomo fake-ip + sniffer + proxy-server-nameserver；Xray 劫持 53 → 内置 DNS（国外 DoH 走代理 / 国内直连），不依赖节点 UDP 转发
 
+### 应用更新
+
+- **应用内更新**：设置 → 版本 点一下即查；启动时也会静默查一次（可在同一处关掉）。有新版时版本行直接显示 `0.7.0 → 0.8.0`，点开弹窗看更新说明 → 下载（带进度，关掉弹窗也继续下）→ 拉起系统安装器
+- **双源回退**：先查 GitHub Releases API（按 ABI + flavor 精确匹配资产，约 30 MB）；国内直连 GitHub 基本不通，失败后自动退到自建镜像 `https://cctyt.de5.net/dl/netproxy-latest.json`（universal 包，约 113 MB）。两源都失败时给出「浏览器打开下载页」的出口
+- **不额外设代理**：更新请求不显式走代理（和订阅更新一致）。VPN 开着时会被自己的隧道接管——走当前节点，节点正常时 GitHub 反而更容易连通，但下载会消耗节点流量；节点全挂时先关掉代理再检查
+- **安装授权**：Android 8+ 首次安装会跳到「安装未知应用」授权页（`REQUEST_INSTALL_PACKAGES` + `ACTION_MANAGE_UNKNOWN_APP_SOURCES`），授权后回来再点一次「安装」
+- **完整性**：镜像源 manifest 带 sha256，下载完先校验再交给安装器；APK 通过 `FileProvider` 以 `content://` 暴露，不落公共存储
+
 ### 订阅
 
 - **多格式导入**：Clash YAML / 分享链接（ss·vmess·vless·trojan·hysteria2·tuic·anytls…）/ Base64 自动嗅探
@@ -96,6 +104,7 @@ app/src/main/java/com/interstellar/proxy/
 │   ├── config/MihomoConfigBuilder.kt # Clash YAML 生成（语义对齐）
 │   ├── config/XrayConfigBuilder.kt   # Xray JSON 生成（含 hy2）
 │   ├── net/（SubscriptionFetcher / NetProbe）/ Settings.kt / …
+│   ├── AppUpdater.kt                 # 应用内更新（查 GitHub → 退镜像 → 下载 → 安装）
 ├── ui/
 │   ├── AppViewModel.kt     # 状态流 + 三内核分支 + SmartSwitchEngine 接线
 │   ├── SmartSwitchEngine.kt# 智能模式引擎（巡检/筛选/缓存/告警）

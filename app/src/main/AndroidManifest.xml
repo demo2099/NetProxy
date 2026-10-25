@@ -13,6 +13,10 @@
     <!-- per-app proxy needs the full package list (sideloaded distribution) -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
+    <!-- 应用内更新：下载完要拉起系统安装器。Android 8+ 还需用户在系统设置里
+         允许「安装未知应用」（运行时跳转，见 AppUpdater.openInstallPermission） -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <!-- 扫码导入订阅：只在前台取景时用，不申请存储权限（相册走系统选择器） -->
     <uses-permission android:name="android.permission.CAMERA" />
     <!-- required=false：没有摄像头的设备（少数平板/模拟器）仍可安装，只是入口会提示不可用 -->
@@ -86,6 +90,22 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+
+        <!--
+          应用内更新：把 cacheDir/update/app.apk 以 content:// 交给系统安装器。
+          必须走 FileProvider —— 直接传 file:// 从 Android 7 起会抛
+          FileUriExposedException。authorities 用 ${applicationId}，debug 变体
+          （com.interstellar.proxy.debug）自动对得上。
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
     </application>
 </manifest>

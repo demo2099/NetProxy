@@ -92,10 +92,13 @@ android {
         create("slim") {
             dimension = "cores"
             buildConfigField("String", "CORE_KINDS", "\"singbox\"")
+            // 应用内更新按它拼资产名：interstellar-slim-<abi>-release.apk
+            buildConfigField("String", "CORE_FLAVOR", "\"slim\"")
         }
         create("full") {
             dimension = "cores"
             buildConfigField("String", "CORE_KINDS", "\"singbox,mihomo,xray\"")
+            buildConfigField("String", "CORE_FLAVOR", "\"full\"")
         }
     }
 

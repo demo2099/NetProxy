@@ -50,6 +50,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -67,7 +69,9 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
+import com.interstellar.proxy.data.AppUpdater
 import com.interstellar.proxy.data.Settings
+import com.interstellar.proxy.data.UpdateState
 import com.interstellar.proxy.ui.AppViewModel
 import com.interstellar.proxy.ui.ConnectionsViewModel
 import com.interstellar.proxy.ui.LogsViewModel
@@ -77,6 +81,7 @@ import com.interstellar.proxy.ui.pages.LogsPage
 import com.interstellar.proxy.ui.pages.PerAppProxyPage
 import com.interstellar.proxy.ui.pages.SettingsPage
 import com.interstellar.proxy.ui.pages.SettingsSubPage
+import com.interstellar.proxy.ui.pages.UpdateDialog
 import com.interstellar.proxy.ui.pages.setThemeChangedListener
 import com.interstellar.proxy.ui.components.AmbientGlow
 import com.interstellar.proxy.ui.components.DockItem
@@ -164,6 +169,11 @@ fun AppRoot(
     val appViewModel: AppViewModel = viewModel()
     val logsViewModel: LogsViewModel = viewModel()
     val connectionsViewModel: ConnectionsViewModel = viewModel()
+
+    // 应用内更新：启动静默查一次（失败不打扰），有新版且不是用户跳过的版本就弹一次
+    val updateState by AppUpdater.state.collectAsState()
+    var updatePromptDismissed by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { AppUpdater.autoCheck() }
 
     DisposableEffect(Unit) {
         appViewModel.connect()
@@ -305,6 +315,19 @@ fun AppRoot(
 
             // iOS tab bar
             Spacer(Modifier.navigationBarsPadding())
+        }
+
+        // 有新版就弹一次；下载/待安装期间继续显示（用户点「后台下载」才收起）
+        val promptVersion = when (val st = updateState) {
+            is UpdateState.Available -> st.info.version
+            is UpdateState.Downloading -> st.info.version
+            is UpdateState.Ready -> st.info.version
+            else -> null
+        }
+        if (!updatePromptDismissed && promptVersion != null &&
+            promptVersion != Settings.updateSkippedVersion
+        ) {
+            UpdateDialog(onDismiss = { updatePromptDismissed = true })
         }
     }
 }

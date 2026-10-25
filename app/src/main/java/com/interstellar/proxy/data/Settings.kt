@@ -344,6 +344,33 @@ object Settings {
             commit()
         }
 
+    /**
+     * 启动时自动检查新版本。默认开 —— 更新检查只是一个几十 KB 的 JSON 请求，
+     * 代价极低；关掉它意味着用户永远不知道自己落后了。
+     */
+    var autoCheckUpdate: Boolean
+        get() = properties.getProperty("autoCheckUpdate", "true").toBoolean()
+        set(value) {
+            properties.setProperty("autoCheckUpdate", value.toString())
+            commit()
+        }
+
+    /** 最近一次检查发现的远端版本（仅用于设置页展示，不参与下载地址）。 */
+    var updateLatestVersion: String
+        get() = properties.getProperty("updateLatestVersion", "")
+        set(value) {
+            properties.setProperty("updateLatestVersion", value)
+            commit()
+        }
+
+    /** 用户点过「以后再说」的版本：同一个版本不再主动弹窗。 */
+    var updateSkippedVersion: String
+        get() = properties.getProperty("updateSkippedVersion", "")
+        set(value) {
+            properties.setProperty("updateSkippedVersion", value)
+            commit()
+        }
+
     fun serviceClass(): Class<*> =
         when (serviceMode) {
             "proxy" -> com.interstellar.proxy.bg.ProxyService::class.java

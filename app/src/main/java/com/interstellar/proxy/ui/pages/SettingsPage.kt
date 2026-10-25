@@ -35,9 +35,11 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.interstellar.proxy.BuildConfig
+import com.interstellar.proxy.data.AppUpdater
 import com.interstellar.proxy.data.CustomRulesStore
 import com.interstellar.proxy.data.DnsOverridesStore
 import com.interstellar.proxy.data.Settings
+import com.interstellar.proxy.data.UpdateState
 import com.interstellar.proxy.ui.components.GlassCard
 import com.interstellar.proxy.ui.components.IosSectionFooter
 import com.interstellar.proxy.ui.components.IosSwitch
@@ -84,6 +86,9 @@ fun SettingsPage(onOpen: (SettingsSubPage) -> Unit, onProxyChanged: () -> Unit =
     val colors = LocalInterstellarColors.current
     val context = androidx.compose.ui.platform.LocalContext.current
     var themeMode by remember { mutableStateOf(Settings.themeMode) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    val updateState by AppUpdater.state.collectAsState()
+    var autoCheckUpdate by remember { mutableStateOf(Settings.autoCheckUpdate) }
 
     fun normalizedTheme(): String = when (themeMode) {
         "aerospace" -> "dark"
@@ -231,11 +236,43 @@ fun SettingsPage(onOpen: (SettingsSubPage) -> Unit, onProxyChanged: () -> Unit =
                     }
                 },
             )
-            PrefNavRow(title = "版本", value = BuildConfig.VERSION_NAME)
+            // 版本行就是更新入口：有新版本时 value 直接显示 0.7.0 → 0.8.0
+            val available = updateState as? UpdateState.Available
+            PrefNavRow(
+                title = "版本",
+                desc = available?.let { "发现新版本 v${it.info.version}，点击下载安装" },
+                value = if (available != null) {
+                    "${BuildConfig.VERSION_NAME} → ${available.info.version}"
+                } else {
+                    BuildConfig.VERSION_NAME
+                },
+                onClick = {
+                    showUpdateDialog = true
+                    // 没有可用结果（还没查过 / 上次失败 / 已是最新）就现场查一次
+                    when (updateState) {
+                        is UpdateState.Available, is UpdateState.Downloading, is UpdateState.Ready -> Unit
+                        else -> AppUpdater.startCheck()
+                    }
+                },
+            )
+            PrefToggleRow(
+                title = "自动检查更新",
+                desc = "启动时自动查询新版本",
+                checked = autoCheckUpdate,
+                onChange = {
+                    autoCheckUpdate = it
+                    Settings.autoCheckUpdate = it
+                },
+            )
             PrefNavRow(title = "内核", value = "sing-box 1.14.0")
         }
 
         Spacer(Modifier.height(20.dp))
+    }
+
+    // 更新对话框（检查 / 下载 / 安装全在这一个弹窗里）
+    if (showUpdateDialog) {
+        UpdateDialog(onDismiss = { showUpdateDialog = false })
     }
 }
 
