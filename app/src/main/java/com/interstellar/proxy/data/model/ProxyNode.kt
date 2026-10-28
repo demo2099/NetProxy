@@ -49,7 +49,31 @@ data class ProxyNode(
     val shadowTls: ShadowTlsParams? = null,
 
     // hysteria2
+    /**
+     * Obfs password. Non-null means the node has obfs enabled; the *kind* of
+     * obfs lives in [hy2ObfsType] — they are two fields because the password
+     * alone cannot tell salamander from gecko, and emitting the wrong type
+     * makes the server silently drop the handshake.
+     */
     val hy2ObfsPassword: String? = null,
+    /**
+     * `salamander` (the original, all hysteria2 builds) or `gecko`
+     * (hysteria ≥2.9.2 / sing-box ≥1.14 / mihomo ≥1.19.26).
+     *
+     * null means "legacy node, obfs type was never recorded" — the builders
+     * treat it as salamander, which is what every pre-gecko client emitted.
+     */
+    val hy2ObfsType: String? = null,
+    /** gecko-only: split the QUIC handshake into datagrams of this size range. */
+    val hy2GeckoMinPacketSize: Int? = null,
+    val hy2GeckoMaxPacketSize: Int? = null,
+    /**
+     * Port hopping ranges, normalised to sing-box's `lo:hi` form
+     * (`["20000:30000"]`). Clash/hysteria spell these `20000-30000`.
+     */
+    val hy2ServerPorts: List<String>? = null,
+    /** Port-hopping interval as a sing-box duration string, e.g. `"30s"`. */
+    val hy2HopInterval: String? = null,
     val upMbps: Int? = null,
     val downMbps: Int? = null,
 
@@ -100,6 +124,13 @@ data class ProxyNode(
         get() = alpn ?: ANYTLS_DEFAULT_ALPN.takeIf { type == NodeType.ANYTLS }
 
     /**
+     * True when this node needs a gecko-capable kernel
+     * (sing-box ≥1.14, mihomo ≥1.19.26). Xray cannot express it at all.
+     */
+    val isGeckoObfs: Boolean
+        get() = type == NodeType.HYSTERIA2 && hy2ObfsType == ObfsType.GECKO
+
+    /**
      * Compact protocol line for node cards, e.g. "vless·grpc·tls",
      * "trojan·ws·tls", "hysteria2·obfs".
      */
@@ -117,7 +148,13 @@ data class ProxyNode(
             tls -> parts += "tls"
         }
         if (shadowTls != null) parts += "stls"
-        if (type == NodeType.HYSTERIA2 && !hy2ObfsPassword.isNullOrBlank()) parts += "obfs"
+        // Name the obfs kind: "hysteria2·obfs" cannot distinguish a node that
+        // works from one that will never handshake, and gecko is the case
+        // where that difference is user-visible (older clients reject it).
+        if (type == NodeType.HYSTERIA2 && !hy2ObfsPassword.isNullOrBlank()) {
+            parts += if (hy2ObfsType == ObfsType.GECKO) ObfsType.GECKO else "obfs"
+        }
+        if (!hy2ServerPorts.isNullOrEmpty()) parts += "hop"
         if (!plugin.isNullOrBlank()) parts += "plugin"
         return parts.joinToString("·")
     }
@@ -180,7 +217,58 @@ data class ProxyNode(
     companion object {
         /** See [effectiveAlpn]. Shared so both config builders agree on one value. */
         val ANYTLS_DEFAULT_ALPN: List<String> = listOf("h3")
+
+        /**
+         * Normalise a port-hopping range to sing-box's `server_ports` spelling.
+         *
+         * Every producer writes `lo-hi` (share links: `mport=20000-30000`;
+         * Clash: `ports: 20000-30000`), while sing-box demands `lo:hi`. Bare
+         * ports are legal in both and pass through untouched.
+         *
+         * Unparseable segments are dropped rather than forwarded: one malformed
+         * range makes sing-box reject the entire config, which would take down
+         * a node that works fine without hopping.
+         */
+        fun normalizeServerPorts(raw: String?): List<String>? {
+            val ports = raw?.split(',')?.mapNotNull { segment ->
+                val part = segment.trim()
+                if (part.isEmpty()) return@mapNotNull null
+                // Already in sing-box form ("20000:30000") — imported from a
+                // sing-box subscription. Keep it, but only if both ends parse.
+                if (part.contains(':')) {
+                    val lo = part.substringBefore(':').trim().toIntOrNull()
+                    val hi = part.substringAfter(':').trim().toIntOrNull()
+                    return@mapNotNull if (lo != null && hi != null) "$lo:$hi" else null
+                }
+                if (!part.contains('-')) return@mapNotNull part.takeIf { it.toIntOrNull() != null }
+                val lo = part.substringBefore('-').trim()
+                val hi = part.substringAfter('-').trim()
+                if (lo.toIntOrNull() != null && hi.toIntOrNull() != null) "$lo:$hi" else null
+            }.orEmpty()
+            return ports.takeIf { it.isNotEmpty() }
+        }
+
+        /** hysteria spells the hop interval in seconds; sing-box wants a duration. */
+        fun normalizeHopInterval(raw: String?): String? {
+            val value = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            return value.toIntOrNull()?.let { "${it}s" } ?: value
+        }
     }
+}
+
+/**
+ * hysteria2 obfs kinds.
+ *
+ * Kept as plain strings (not an enum) because [ProxyNode] is `@Serializable`
+ * and subscriptions may name types this build has never heard of — an unknown
+ * value should round-trip untouched rather than fail deserialisation.
+ */
+object ObfsType {
+    const val SALAMANDER = "salamander"
+    const val GECKO = "gecko"
+
+    /** Normalise whatever the subscription said; unknown ⇒ null (caller falls back). */
+    fun parse(raw: String?): String? = raw?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
 }
 
 enum class NodeType(val wire: String) {

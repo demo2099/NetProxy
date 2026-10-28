@@ -39,15 +39,29 @@ object XrayConfigBuilder {
         private set
 
     fun build(nodes: List<ProxyNode>, options: ConfigBuilder.BuildOptions): String {
-        val usable = nodes.filter { it.type in SUPPORTED && it.shadowTls == null && it.network != "quic" }
+        // gecko is the one hy2 obfs kind Xray cannot express: its finalmask only
+        // knows salamander. Emitting salamander for a gecko node produces a
+        // config that loads fine and then never handshakes, which reads as "the
+        // node is dead" — so drop them here and say why in skippedReport.
+        val geckoNodes = nodes.filter { it.isGeckoObfs }
+        val usable = nodes.filter {
+            it.type in SUPPORTED && it.shadowTls == null && it.network != "quic" && !it.isGeckoObfs
+        }
         val unsupported = nodes.size - usable.size
-        skippedReport = if (unsupported > 0) {
-            "已跳过 $unsupported 个 Xray 不支持的节点(tuic/anytls/ssh/shadow-tls/quic)"
-        } else {
-            null
+        skippedReport = when {
+            unsupported <= 0 -> null
+            geckoNodes.isNotEmpty() -> "已跳过 $unsupported 个节点，其中 ${geckoNodes.size} 个使用 gecko 混淆" +
+                "（Xray 内核不支持，请切换到 sing-box 或 mihomo 内核）"
+            else -> "已跳过 $unsupported 个 Xray 不支持的节点(tuic/anytls/ssh/shadow-tls/quic)"
         }
         if (usable.isEmpty()) {
-            throw IllegalStateException("订阅中没有 Xray 支持的节点 (支持 ss/vmess/vless/trojan/socks/http/wireguard/hysteria2)")
+            throw IllegalStateException(
+                if (geckoNodes.isNotEmpty()) {
+                    "订阅中的节点全部使用 gecko 混淆，Xray 内核不支持，请切换到 sing-box 或 mihomo 内核"
+                } else {
+                    "订阅中没有 Xray 支持的节点 (支持 ss/vmess/vless/trojan/socks/http/wireguard/hysteria2)"
+                },
+            )
         }
 
         val tags = ConfigBuilder.tagsFor(usable)
@@ -416,6 +430,9 @@ object XrayConfigBuilder {
                 )
             val finalMask = JSONObject()
             if (!node.hy2ObfsPassword.isNullOrBlank()) {
+                // Xray's finalmask only knows salamander. gecko nodes never
+                // reach this builder — they are filtered out in build() — so
+                // whatever arrives here really is salamander.
                 finalMask.put(
                     "udp",
                     JSONArray().put(
@@ -425,15 +442,23 @@ object XrayConfigBuilder {
                     ),
                 )
             }
+            val quicParams = JSONObject()
             if (node.upMbps != null || node.downMbps != null) {
-                finalMask.put(
-                    "quicParams",
+                node.upMbps?.let { quicParams.put("brutalUp", "$it Mbps") }
+                node.downMbps?.let { quicParams.put("brutalDown", "$it Mbps") }
+                quicParams.put("congestion", "brutal")
+            }
+            // Port hopping rides quicParams.udpHop here (not a top-level
+            // server_ports like sing-box): hyphen ranges, interval in seconds.
+            node.hy2ServerPorts?.takeIf { it.isNotEmpty() }?.let { ports ->
+                quicParams.put(
+                    "udpHop",
                     JSONObject()
-                        .apply { node.upMbps?.let { put("brutalUp", "$it Mbps") } }
-                        .apply { node.downMbps?.let { put("brutalDown", "$it Mbps") } }
-                        .put("congestion", "brutal"),
+                        .put("ports", ports.joinToString(",") { it.replace(':', '-') })
+                        .put("interval", node.hy2HopInterval?.removeSuffix("s") ?: "30"),
                 )
             }
+            if (quicParams.length() > 0) finalMask.put("quicParams", quicParams)
             if (finalMask.length() > 0) stream.put("finalmask", finalMask)
             return stream
         }

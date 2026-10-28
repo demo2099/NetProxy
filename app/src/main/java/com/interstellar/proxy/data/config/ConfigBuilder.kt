@@ -6,6 +6,7 @@ import com.interstellar.proxy.data.model.DomainMatchType
 import com.interstellar.proxy.data.model.DnsOverrideEntry
 import com.interstellar.proxy.data.model.NodeFilterMode
 import com.interstellar.proxy.data.model.NodeType
+import com.interstellar.proxy.data.model.ObfsType
 import com.interstellar.proxy.data.model.ProxyNode
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.add
@@ -30,6 +31,12 @@ object ConfigBuilder {
     const val SMART_TAG = "smart"
     const val DIRECT_TAG = "direct"
     const val BLOCK_TAG = "block"
+    /**
+     * Port-hopping interval used when a node asks for hopping but does not
+     * carry an interval. 30s is sing-box's own default and what the panels
+     * emit, so the two agree in practice.
+     */
+    const val DEFAULT_HOP_INTERVAL = "30s"
     private const val DNS_HOSTS_TAG = "dns-hosts"
 
     /** Tags that node names must never collide with. */
@@ -374,10 +381,31 @@ object ConfigBuilder {
                 put("server", node.server)
                 put("server_port", node.port)
                 node.password?.let { put("password", it) }
-                node.hy2ObfsPassword?.let {
+                // Port hopping. sing-box wants "lo:hi"; share links and Clash
+                // both spell it "lo-hi", so the parser normalises before we
+                // get here. hop_interval is only meaningful alongside
+                // server_ports, and omitting it makes sing-box stay put.
+                node.hy2ServerPorts?.takeIf { it.isNotEmpty() }?.let { ports ->
+                    putJsonArray("server_ports") { ports.forEach { add(it) } }
+                    put("hop_interval", node.hy2HopInterval ?: DEFAULT_HOP_INTERVAL)
+                }
+                node.hy2ObfsPassword?.let { pass ->
                     putJsonObject("obfs") {
-                        put("type", "salamander")
-                        put("password", it)
+                        // Unknown or absent ⇒ salamander: that is what every
+                        // pre-gecko panel meant, and gecko-capable servers
+                        // still accept it only if the server agrees — so we
+                        // must never guess "gecko" on a missing type.
+                        val kind = node.hy2ObfsType?.takeIf { it == ObfsType.GECKO }
+                            ?: ObfsType.SALAMANDER
+                        put("type", kind)
+                        put("password", pass)
+                        // gecko-only: split the QUIC handshake into datagrams
+                        // of this size range. Emitted only when the node
+                        // carries them, so servers keep their own default.
+                        if (kind == ObfsType.GECKO) {
+                            node.hy2GeckoMinPacketSize?.let { put("min_packet_size", it) }
+                            node.hy2GeckoMaxPacketSize?.let { put("max_packet_size", it) }
+                        }
                     }
                 }
                 node.upMbps?.let { put("up_mbps", it) }

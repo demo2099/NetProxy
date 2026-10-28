@@ -1,6 +1,7 @@
 package com.interstellar.proxy.data.subscription
 
 import com.interstellar.proxy.data.model.NodeType
+import com.interstellar.proxy.data.model.ObfsType
 import com.interstellar.proxy.data.model.ProxyNode
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -66,7 +67,18 @@ object SingboxOutboundConverter {
 
             NodeType.HYSTERIA2 -> node.copy(
                 password = outbound.str("password"),
+                // Importing a sing-box subscription must preserve the obfs
+                // kind: dropping `type` would turn every gecko node into a
+                // salamander one on the way in, and the round-trip through
+                // this app would silently break nodes that work elsewhere.
+                hy2ObfsType = ObfsType.parse(outbound.obj("obfs")?.str("type")),
                 hy2ObfsPassword = outbound.obj("obfs")?.str("password"),
+                hy2GeckoMinPacketSize = outbound.obj("obfs")?.num("min_packet_size"),
+                hy2GeckoMaxPacketSize = outbound.obj("obfs")?.num("max_packet_size"),
+                hy2ServerPorts = ProxyNode.normalizeServerPorts(
+                    outbound.strList("server_ports")?.joinToString(","),
+                ),
+                hy2HopInterval = outbound.str("hop_interval"),
                 upMbps = outbound.num("up_mbps"),
                 downMbps = outbound.num("down_mbps"),
                 sni = outbound.obj("tls")?.str("server_name"),

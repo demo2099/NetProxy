@@ -1,6 +1,7 @@
 package com.interstellar.proxy.data.subscription
 
 import com.interstellar.proxy.data.model.NodeType
+import com.interstellar.proxy.data.model.ObfsType
 import com.interstellar.proxy.data.model.ProxyNode
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -230,7 +231,19 @@ object ClashParser {
             sni = proxy.str("sni"),
             alpn = proxy.strList("alpn"),
             insecure = proxy.bool("skip-cert-verify"),
+            // `obfs` names the kind (salamander | gecko); the password alone
+            // cannot tell them apart and emitting the wrong one makes the
+            // server drop the handshake without a diagnostic.
+            hy2ObfsType = ObfsType.parse(proxy.str("obfs")),
             hy2ObfsPassword = proxy.str("obfs-password"),
+            hy2GeckoMinPacketSize = proxy.num("obfs-min-packet-size") ?: proxy.num("min-packet-size"),
+            hy2GeckoMaxPacketSize = proxy.num("obfs-max-packet-size") ?: proxy.num("max-packet-size"),
+            // Clash writes `ports: 20000-30000` (scalar) or occasionally a list;
+            // both collapse to sing-box's "lo:hi" via the shared normaliser.
+            hy2ServerPorts = ProxyNode.normalizeServerPorts(
+                proxy.str("ports") ?: proxy.strList("ports")?.joinToString(","),
+            ),
+            hy2HopInterval = ProxyNode.normalizeHopInterval(proxy.str("hop-interval")),
             upMbps = proxy.num("up")?.let { cleanSpeed(it) },
             downMbps = proxy.num("down")?.let { cleanSpeed(it) },
             tls = true,

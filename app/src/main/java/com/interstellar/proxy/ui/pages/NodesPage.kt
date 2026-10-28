@@ -912,7 +912,18 @@ private fun NodeDetailSheet(item: NodeEntry, onDismiss: () -> Unit) {
                     n.alterId?.let { add("alterId" to "$it") }
                     n.security?.let { add("VMess 加密" to it) }
                     if (n.type == com.interstellar.proxy.data.model.NodeType.HYSTERIA2 && !n.hy2ObfsPassword.isNullOrBlank()) {
-                        add("混淆" to "已启用")
+                        // Name the kind: "已启用" hides whether this node can
+                        // run on the current kernel, and gecko is exactly the
+                        // case where that decides whether it connects at all.
+                        add("混淆" to if (n.isGeckoObfs) "gecko" else "salamander")
+                    }
+                    n.hy2ServerPorts?.takeIf { it.isNotEmpty() }?.let { ports ->
+                        add(
+                            "端口跳跃" to buildString {
+                                append(ports.joinToString(", ") { it.replace(':', '-') })
+                                n.hy2HopInterval?.let { append(" · 间隔 $it") }
+                            },
+                        )
                     }
                     n.upMbps?.let { add("上行" to "$it Mbps") }
                     n.downMbps?.let { add("下行" to "$it Mbps") }

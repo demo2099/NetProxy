@@ -5,6 +5,7 @@ import com.interstellar.proxy.data.config.ConfigBuilder.DerivedGroup
 import com.interstellar.proxy.data.model.DomainMatchType
 import com.interstellar.proxy.data.model.NodeFilterMode
 import com.interstellar.proxy.data.model.NodeType
+import com.interstellar.proxy.data.model.ObfsType
 import com.interstellar.proxy.data.model.ProxyNode
 
 /**
@@ -230,8 +231,18 @@ object MihomoConfigBuilder {
                 put("type", "hysteria2")
                 node.password?.let { put("password", it) }
                 node.hy2ObfsPassword?.let {
-                    put("obfs", "salamander")
+                    // mihomo gained gecko in 1.19.26; this build ships 1.19.30,
+                    // so the kind must survive verbatim. Anything unknown
+                    // degrades to salamander, which every version accepts.
+                    put("obfs", if (node.hy2ObfsType == ObfsType.GECKO) ObfsType.GECKO else ObfsType.SALAMANDER)
                     put("obfs-password", it)
+                }
+                // mihomo spells hopping ranges with a hyphen and takes the
+                // interval as whole seconds — the opposite of sing-box, so the
+                // normalised "lo:hi" / "30s" must be converted back here.
+                node.hy2ServerPorts?.takeIf { it.isNotEmpty() }?.let { ports ->
+                    put("ports", ports.joinToString(",") { it.replace(':', '-') })
+                    put("hop-interval", node.hy2HopInterval?.removeSuffix("s")?.toIntOrNull() ?: 30)
                 }
                 node.upMbps?.let { put("up", "$it Mbps") }
                 node.downMbps?.let { put("down", "$it Mbps") }

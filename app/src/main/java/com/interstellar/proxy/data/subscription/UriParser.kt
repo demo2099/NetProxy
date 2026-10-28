@@ -2,6 +2,7 @@ package com.interstellar.proxy.data.subscription
 
 import android.util.Base64
 import com.interstellar.proxy.data.model.NodeType
+import com.interstellar.proxy.data.model.ObfsType
 import com.interstellar.proxy.data.model.ProxyNode
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -194,12 +195,32 @@ object UriParser {
                 password = URLDecoder.decode(password, "UTF-8").ifBlank { null },
                 sni = query.firstOrNull("sni") ?: query.firstOrNull("peer"),
                 insecure = (query.firstOrNull("insecure") ?: query.firstOrNull("allowInsecure"))?.toBoolean(),
+                // The obfs *kind* and its password are separate query keys:
+                // `obfs=gecko&obfs-password=...`. Reading only the password
+                // (as this used to) makes every gecko node look like a
+                // salamander node, and the server drops the handshake.
+                hy2ObfsType = ObfsType.parse(query.firstOrNull("obfs")),
                 hy2ObfsPassword = query.firstOrNull("obfs-password"),
+                // gecko packet sizing travels under several spellings in the
+                // wild; accept all of them rather than lose the tuning.
+                hy2GeckoMinPacketSize = query.firstIntOrNull(
+                    "obfs-min-packet-size", "min-packet-size", "min_packet_size",
+                ),
+                hy2GeckoMaxPacketSize = query.firstIntOrNull(
+                    "obfs-max-packet-size", "max-packet-size", "max_packet_size",
+                ),
+                // `mport=20000-30000,40000-50000` ⇒ ["20000:30000","40000:50000"]
+                hy2ServerPorts = ProxyNode.normalizeServerPorts(query.firstOrNull("mport")),
+                hy2HopInterval = ProxyNode.normalizeHopInterval(query.firstOrNull("hop-interval")),
                 upMbps = query.firstOrNull("up")?.toIntOrNull(),
                 downMbps = query.firstOrNull("down")?.toIntOrNull(),
                 alpn = query.firstOrNull("alpn")?.split(',')?.map { it.trim() },
             )
         }
+
+    /** First non-null integer among [keys] — subscriptions disagree on spelling. */
+    private fun Map<String, List<String>>.firstIntOrNull(vararg keys: String): Int? =
+        keys.firstNotNullOfOrNull { key -> this[key]?.firstOrNull()?.trim()?.toIntOrNull() }
 
     private fun parseTuic(body: String, subId: String?): ProxyNode? =
         parseGenericUserinfoUri(body, NodeType.TUIC, subId) { userinfo, query ->
