@@ -176,10 +176,20 @@ jobs:
 
       # 单元测试（src/test，两个 flavor 共用）。assembleRelease 不编译测试源集，
       # 所以必须单独跑一次 —— 否则测试里的语法错误要到本地跑才暴露。
+      # 失败时把日志尾部逐行打成 ::error::，这样 GitHub 的注解里能直接看到
+      # 编译错误（job log 需要 admin 权限才能下载，注解是公开的）。
       - name: Run unit tests
         run: |
           chmod +x gradlew
-          ./gradlew :app:testSlimDebugUnitTest --no-daemon
+          set +e
+          ./gradlew :app:testSlimDebugUnitTest --no-daemon > /tmp/test.log 2>&1
+          RC=$?
+          if [ $RC -ne 0 ]; then
+            echo "::error::unit tests failed (exit $RC)"
+            tail -60 /tmp/test.log | while IFS= read -r line; do echo "::error::$line"; done
+            exit $RC
+          fi
+          tail -20 /tmp/test.log
 
       # 两个 flavor 都要编：slim（仅 sing-box）与 full（含 mihomo / Xray）
       - name: Build APK
