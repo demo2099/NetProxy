@@ -408,4 +408,37 @@ object Settings {
             else -> com.interstellar.proxy.bg.VPNService::class.java
         }
 
+    // ---- per-node TLS verification override ----
+
+    /**
+     * User's explicit choice for one node's certificate verification, or `null`
+     * when they never made one.
+     *
+     * Keyed by [com.interstellar.proxy.data.model.ProxyNode.nodeKey] rather than
+     * the node id, because ids are regenerated on every parse and the whole list
+     * is replaced when a subscription refreshes — a choice keyed by id would
+     * silently revert on the next update.
+     *
+     * This exists because the app had no way to express the flag at all: a node
+     * whose subscription link omitted `insecure` was stuck failing with
+     * `x509: certificate signed by unknown authority`, with no switch anywhere
+     * to turn verification off. Applied in
+     * [SubscriptionRepository.poolOf], so both the UI and every kernel config
+     * see the same value.
+     */
+    fun nodeInsecureOverride(nodeKey: String): Boolean? =
+        com.interstellar.proxy.data.model.ProxyNode
+            .parseBoolFlag(properties.getProperty("tlsInsecure.$nodeKey"))
+
+    /** Pass `null` to drop the override and fall back to the subscription's own value. */
+    fun setNodeInsecureOverride(nodeKey: String, value: Boolean?) {
+        val key = "tlsInsecure.$nodeKey"
+        if (value == null) {
+            properties.remove(key)
+        } else {
+            properties.setProperty(key, value.toString())
+        }
+        commit()
+    }
+
 }

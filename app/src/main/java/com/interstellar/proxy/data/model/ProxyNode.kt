@@ -158,6 +158,17 @@ data class ProxyNode(
             )
 
     /**
+     * Stable identity for a node, independent of the random `id` handed out on
+     * every parse and of the display name.
+     *
+     * Used to key per-node user choices (see `Settings.nodeInsecureOverride`)
+     * that must survive a subscription refresh — the whole node list is
+     * rebuilt from scratch on every fetch, so anything keyed by `id` or `name`
+     * would be lost the moment the subscription updates.
+     */
+    val nodeKey: String get() = "${type.wire}|$server|$port"
+
+    /**
      * Repair a node that an older build persisted with the wrong flag.
      *
      * Nodes are cached on disk, so fixing the parser alone is not enough: a

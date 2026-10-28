@@ -135,10 +135,20 @@ object SubscriptionRepository {
         activeSubscriptionId: String,
         mixEnabled: Boolean,
         mixSubscriptionIds: Set<String>,
-    ): List<ProxyNode> = if (mixEnabled) {
-        subscriptions.filter { it.id in mixSubscriptionIds }.flatMap { it.nodes }
-    } else {
-        subscriptions.find { it.id == activeSubscriptionId }?.nodes ?: emptyList()
+    ): List<ProxyNode> {
+        val pool = if (mixEnabled) {
+            subscriptions.filter { it.id in mixSubscriptionIds }.flatMap { it.nodes }
+        } else {
+            subscriptions.find { it.id == activeSubscriptionId }?.nodes ?: emptyList()
+        }
+        // Apply the user's per-node verification choice here, at the single
+        // place every consumer (UI lists, every kernel config, route exclusions)
+        // reads the pool from — so what the sheet shows and what the kernel gets
+        // can never disagree. See Settings.nodeInsecureOverride.
+        return pool.map { node ->
+            val override = Settings.nodeInsecureOverride(node.nodeKey)
+            if (override == null || override == node.insecure) node else node.copy(insecure = override)
+        }
     }
 
     /** Subscriptions checked into the mix pool (store order). */

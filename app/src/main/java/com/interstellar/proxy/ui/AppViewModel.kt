@@ -829,6 +829,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
      * Regenerates the active config from current settings (bypass-LAN,
      * bypass-CN, ad-block, mode…) and hot-reloads the running core.
      */
+    /**
+     * Turn certificate verification on/off for one node and re-apply it.
+     *
+     * Stored per node (see [Settings.nodeInsecureOverride]) so it survives
+     * subscription refreshes, then the config is regenerated and the running
+     * kernel reloaded — otherwise the user would flip a switch that only takes
+     * effect on the next manual reconnect.
+     */
+    fun setNodeCertVerify(node: com.interstellar.proxy.data.model.ProxyNode, verify: Boolean) {
+        Settings.setNodeInsecureOverride(node.nodeKey, !verify)
+        refreshProxyConfig()
+    }
+
     fun refreshProxyConfig() {
         viewModelScope.launch(Dispatchers.IO) {
             val config = SubscriptionRepository.regenerateActiveConfig()

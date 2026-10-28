@@ -145,6 +145,22 @@ class InsecureFlagTest {
         check(honest.withRepairedInsecure() == honest) { "an explicit false on a real host is honoured" }
     }
 
+    // ---- the persistence key ----
+
+    @Test
+    fun `nodeKey is stable across re-parses and ignores id and name`() {
+        // This string is a persistence key for the per-node verification
+        // override. Changing it silently drops every user's choice, so pin the
+        // format, not just the equality.
+        val a = ProxyNode(id = "1", name = "A", type = NodeType.HYSTERIA2, server = "1.2.3.4", port = 8443)
+        val b = ProxyNode(id = "2", name = "B", type = NodeType.HYSTERIA2, server = "1.2.3.4", port = 8443)
+
+        check(a.nodeKey == b.nodeKey) { "id and name must not participate" }
+        check(a.nodeKey == "hysteria2|1.2.3.4|8443") { "unexpected format: ${a.nodeKey}" }
+        check(a.nodeKey != a.copy(port = 8444).nodeKey) { "port distinguishes" }
+        check(a.nodeKey != a.copy(type = NodeType.TUIC).nodeKey) { "type distinguishes" }
+    }
+
     // ---- helpers ----
 
     private fun node(

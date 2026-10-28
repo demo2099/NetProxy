@@ -487,7 +487,19 @@ fun NodesPage(viewModel: AppViewModel) {
     }
 
     detailItem?.let { item ->
-        NodeDetailSheet(item = item, onDismiss = { detailItem = null })
+        NodeDetailSheet(
+            item = item,
+            onDismiss = { detailItem = null },
+            onToggleCertVerify = { verify ->
+                item.node?.let { n ->
+                    viewModel.setNodeCertVerify(n, verify)
+                    // Reflect the choice in the open sheet immediately: the
+                    // node list itself is rebuilt from the config, which only
+                    // happens after the kernel reload.
+                    detailItem = item.copy(node = n.copy(insecure = !verify))
+                }
+            },
+        )
     }
 }
 
@@ -827,7 +839,11 @@ private fun NodeGridCell(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NodeDetailSheet(item: NodeEntry, onDismiss: () -> Unit) {
+private fun NodeDetailSheet(
+    item: NodeEntry,
+    onDismiss: () -> Unit,
+    onToggleCertVerify: (Boolean) -> Unit,
+) {
     val colors = LocalInterstellarColors.current
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -893,18 +909,26 @@ private fun NodeDetailSheet(item: NodeEntry, onDismiss: () -> Unit) {
                 // subscription itself cannot express. See ProxyNode.effectiveAlpn.
                 n.effectiveAlpn?.takeIf { it.isNotEmpty() }?.let { DetailRow("ALPN", it.joinToString(", ")) }
                 n.fingerprint?.let { DetailRow("uTLS 指纹", it) }
-                // effectiveInsecure, not the raw flag: on a hy2/tuic node that
-                // points at a bare IP with no SNI the app skips verification
-                // even when the link is silent, and the sheet has to say so —
-                // otherwise a node whose handshake cannot be validated looks
-                // identical to one that is. See ProxyNode.effectiveInsecure.
-                if (n.effectiveInsecure) {
-                    DetailRow(
-                        "证书校验",
-                        if (n.insecure == true) "跳过（订阅指定）" else "跳过（IP 直连，无法校验）",
+                // A switch, not a read-only row: the app previously had no way
+                // to express this flag at all, so a node whose link omitted
+                // `insecure` was unfixable — it just failed with
+                // `x509: certificate signed by unknown authority` forever.
+                // Self-signed hy2/tuic nodes are the common case. The choice is
+                // persisted per node (Settings.nodeInsecureOverride).
+                if (n.tls || n.type in ProxyNode.TLS_ONLY_TYPES) {
+                    DetailSwitchRow(
+                        label = "证书校验",
+                        checked = !n.effectiveInsecure,
+                        onChange = onToggleCertVerify,
                     )
-                } else if (n.tls || n.type in ProxyNode.TLS_ONLY_TYPES) {
-                    DetailRow("证书校验", "开启")
+                    if (n.effectiveInsecure) {
+                        HintRow(
+                            when {
+                                n.insecure == true -> "已跳过校验：订阅指定该节点使用自签证书"
+                                else -> "已跳过校验：直连 IP 且无 SNI，公共 CA 无法签发证书"
+                            },
+                        )
+                    }
                 }
 
                 SheetSection("服务器")
@@ -1024,6 +1048,34 @@ private fun DetailRow(label: String, value: String) {
             textAlign = androidx.compose.ui.text.style.TextAlign.End,
         )
     }
+}
+
+/** Detail row with a switch on the right — same metrics as [DetailRow]. */
+@Composable
+private fun DetailSwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    val colors = LocalInterstellarColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, color = colors.textTertiary, fontSize = 13.sp)
+        Spacer(Modifier.weight(1f))
+        IosSwitch(checked = checked, onChange = onChange)
+    }
+}
+
+/** One-line explanation under a detail row, for settings whose effect is not obvious. */
+@Composable
+private fun HintRow(text: String) {
+    val colors = LocalInterstellarColors.current
+    Text(
+        text,
+        color = colors.textTertiary,
+        fontSize = 11.sp,
+        modifier = Modifier.padding(bottom = 4.dp),
+    )
 }
 
 @Composable
