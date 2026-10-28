@@ -186,7 +186,9 @@ jobs:
           RC=$?
           if [ $RC -ne 0 ]; then
             echo "::error::unit tests failed (exit $RC)"
-            tail -60 /tmp/test.log | while IFS= read -r line; do echo "::error::$line"; done
+            # 只挑错误行：GitHub 每个 check run 的注解数量有限，整段 tail 会被丢掉
+            grep -nE "^e: |FAILED|FAILURE|AssertionError|IllegalState|Caused by:|Execution failed" /tmp/test.log \
+              | tail -20 | while IFS= read -r line; do echo "::error::$line"; done
             exit $RC
           fi
           tail -20 /tmp/test.log
