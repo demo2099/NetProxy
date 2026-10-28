@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.sp
 import com.interstellar.proxy.data.SubscriptionRepository
 import com.interstellar.proxy.data.Settings
 import com.interstellar.proxy.data.config.ConfigBuilder
+import com.interstellar.proxy.data.model.ProxyNode
 import com.interstellar.proxy.ui.AppViewModel
 import com.interstellar.proxy.ui.components.IosSwitch
 import com.interstellar.proxy.ui.components.PageHeader
@@ -892,7 +893,19 @@ private fun NodeDetailSheet(item: NodeEntry, onDismiss: () -> Unit) {
                 // subscription itself cannot express. See ProxyNode.effectiveAlpn.
                 n.effectiveAlpn?.takeIf { it.isNotEmpty() }?.let { DetailRow("ALPN", it.joinToString(", ")) }
                 n.fingerprint?.let { DetailRow("uTLS 指纹", it) }
-                if (n.insecure == true) DetailRow("允许不安全", "是")
+                // effectiveInsecure, not the raw flag: on a hy2/tuic node that
+                // points at a bare IP with no SNI the app skips verification
+                // even when the link is silent, and the sheet has to say so —
+                // otherwise a node whose handshake cannot be validated looks
+                // identical to one that is. See ProxyNode.effectiveInsecure.
+                if (n.effectiveInsecure) {
+                    DetailRow(
+                        "证书校验",
+                        if (n.insecure == true) "跳过（订阅指定）" else "跳过（IP 直连，无法校验）",
+                    )
+                } else if (n.tls || n.type in ProxyNode.TLS_ONLY_TYPES) {
+                    DetailRow("证书校验", "开启")
+                }
 
                 SheetSection("服务器")
                 DetailRow("地址", n.server)

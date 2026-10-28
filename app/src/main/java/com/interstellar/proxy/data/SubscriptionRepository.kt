@@ -66,13 +66,21 @@ object SubscriptionRepository {
                 mutableListOf()
             }
         }.getOrDefault(mutableListOf())
+        // Nodes are cached, so a parse bug outlives the build that fixed it.
+        // Repair the cached shapes in memory (persisted on the next save) so an
+        // upgraded install works without deleting and re-adding subscriptions.
+        // See ProxyNode.withRepairedInsecure.
+        val repaired = list.map { sub ->
+            val nodes = sub.nodes.map { it.withRepairedInsecure() }
+            if (nodes == sub.nodes) sub else sub.copy(nodes = nodes)
+        }
         // drop mix checks pointing at subscriptions that no longer exist
         val mixIds = Settings.mixSubscriptionIds
         if (mixIds.isNotEmpty()) {
-            val pruned = mixIds.filterTo(mutableSetOf()) { id -> list.any { it.id == id } }
+            val pruned = mixIds.filterTo(mutableSetOf()) { id -> repaired.any { it.id == id } }
             if (pruned.size != mixIds.size) Settings.mixSubscriptionIds = pruned
         }
-        return list
+        return repaired.toMutableList()
     }
 
     @Synchronized

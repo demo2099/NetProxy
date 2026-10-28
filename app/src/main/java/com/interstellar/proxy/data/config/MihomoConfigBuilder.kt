@@ -247,7 +247,7 @@ object MihomoConfigBuilder {
                 node.upMbps?.let { put("up", "$it Mbps") }
                 node.downMbps?.let { put("down", "$it Mbps") }
                 node.sni?.let { put("sni", it) }
-                node.insecure?.let { put("skip-cert-verify", it) }
+                put("skip-cert-verify", node.effectiveInsecure)
                 node.effectiveAlpn?.let { put("alpn", it) }
             }
 
@@ -259,7 +259,7 @@ object MihomoConfigBuilder {
                 node.udpRelayMode?.let { put("udp-relay-mode", it) }
                 node.reduceRtt?.let { put("reduce-rtt", it) }
                 node.sni?.let { put("sni", it) }
-                node.insecure?.let { put("skip-cert-verify", it) }
+                put("skip-cert-verify", node.effectiveInsecure)
                 node.effectiveAlpn?.let { put("alpn", it) }
             }
 
@@ -349,7 +349,7 @@ object MihomoConfigBuilder {
         val sni = node.sni ?: node.server
         if (hasTls) {
             put("servername", sni)
-            put("skip-cert-verify", node.insecure ?: false)
+            put("skip-cert-verify", node.effectiveInsecure)
             node.effectiveAlpn?.let { put("alpn", it) }
             node.fingerprint?.let { put("client-fingerprint", it) }
         }

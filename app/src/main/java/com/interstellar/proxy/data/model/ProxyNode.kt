@@ -131,6 +131,55 @@ data class ProxyNode(
         get() = type == NodeType.HYSTERIA2 && hy2ObfsType == ObfsType.GECKO
 
     /**
+     * `tls.insecure` (sing-box) / `skip-cert-verify` (mihomo) as actually emitted.
+     *
+     * An explicit value always wins — a panel that means "verify this" keeps
+     * verification. Only when the subscription says nothing do we fall back,
+     * and the fallback is `true` in exactly one situation: a TLS-only protocol
+     * (hysteria2 / tuic) pointed at a **bare IP with no SNI**.
+     *
+     * Why that case is special: public CAs do not issue certificates for bare
+     * addresses (Let's Encrypt's IP certificates are 6-day enterprise-only),
+     * so such a server either serves a self-signed certificate or none at all.
+     * Verifying there cannot succeed — it only produces
+     * `x509: certificate signed by unknown authority` on every connection,
+     * which is precisely how these nodes die. Nothing is lost by skipping the
+     * check: the peer identity is already pinned by the address we dial, and
+     * there is no name to bind the certificate to in the first place.
+     *
+     * Every other shape (a domain SNI, or vmess/vless/trojan where TLS is
+     * opt-in) keeps the historical default of `false`.
+     */
+    val effectiveInsecure: Boolean
+        get() = insecure ?: (
+            type in TLS_ONLY_TYPES &&
+                sni.isNullOrBlank() &&
+                isValidIpLiteral(server)
+            )
+
+    /**
+     * Repair a node that an older build persisted with the wrong flag.
+     *
+     * Nodes are cached on disk, so fixing the parser alone is not enough: a
+     * link that said `insecure=1` was stored as `insecure: false`, and that
+     * stale explicit `false` would keep overriding [effectiveInsecure] forever
+     * — the user would have to delete and re-add the subscription to recover.
+     *
+     * The repair is deliberately narrow: only the exact shape the old parser
+     * could produce (TLS-only protocol, bare-IP host, no SNI) and only when the
+     * stored value is `false`. Such a node cannot verify its peer under any
+     * configuration, so nothing real is being discarded. `null` (never stated)
+     * and `true` pass through untouched, and a node that later gains an SNI
+     * stops matching, so the repair cannot keep firing.
+     */
+    fun withRepairedInsecure(): ProxyNode =
+        if (insecure == false && type in TLS_ONLY_TYPES && sni.isNullOrBlank() && isValidIpLiteral(server)) {
+            copy(insecure = null)
+        } else {
+            this
+        }
+
+    /**
      * Compact protocol line for node cards, e.g. "vless·grpc·tls",
      * "trojan·ws·tls", "hysteria2·obfs".
      */
@@ -217,6 +266,35 @@ data class ProxyNode(
     companion object {
         /** See [effectiveAlpn]. Shared so both config builders agree on one value. */
         val ANYTLS_DEFAULT_ALPN: List<String> = listOf("h3")
+
+        /**
+         * Protocols that have no non-TLS mode at all: the handshake *is* the
+         * connection, so `tls.insecure` is never a "downgrade" choice but the
+         * only way to talk to a server whose certificate cannot be validated.
+         * See [effectiveInsecure].
+         */
+        val TLS_ONLY_TYPES: Set<NodeType> = setOf(NodeType.HYSTERIA2, NodeType.TUIC)
+
+        /**
+         * Parse a share-link boolean flag.
+         *
+         * `String.toBoolean()` is **not** enough here and using it was a real
+         * bug: hysteria2 / tuic links spell this `insecure=1` far more often
+         * than `insecure=true`, and `"1".toBoolean()` is `false`. The node then
+         * went out with `"insecure": false`, verification came back on for a
+         * self-signed server, and every request failed with
+         * `x509: certificate signed by unknown authority` — while the same link
+         * worked in every other client.
+         *
+         * Unrecognised values return `null` (unknown), not `false`, so they can
+         * never override [effectiveInsecure]'s fallback with a wrong "verify".
+         */
+        fun parseBoolFlag(raw: String?): Boolean? = when (raw?.trim()?.lowercase()) {
+            null, "" -> null
+            "1", "true", "yes", "on" -> true
+            "0", "false", "no", "off" -> false
+            else -> null
+        }
 
         /**
          * Normalise a port-hopping range to sing-box's `server_ports` spelling.

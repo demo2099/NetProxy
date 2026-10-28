@@ -165,8 +165,9 @@ object UriParser {
                 reality = query.firstOrNull("pbk")?.let {
                     ProxyNode.RealityParams(it, query.firstOrNull("sid"))
                 },
-                insecure = query.firstOrNull("allowInsecure")?.toBoolean()
-                    ?: query.firstOrNull("insecure")?.toBoolean(),
+                insecure = query.firstBoolOrNull(
+                    "allowInsecure", "allow_insecure", "insecure", "skip-cert-verify",
+                ),
                 wsPath = query.firstOrNull("path")?.let { URLDecoder.decode(it, "UTF-8") },
                 grpcServiceName = query.firstOrNull("serviceName"),
                 headers = query.firstOrNull("host")?.takeIf { it.isNotBlank() }?.let { mapOf("Host" to it) },
@@ -181,8 +182,9 @@ object UriParser {
                 sni = query.firstOrNull("sni") ?: query.firstOrNull("peer"),
                 alpn = query.firstOrNull("alpn")?.split(',')?.map { it.trim() },
                 fingerprint = query.firstOrNull("fp"),
-                insecure = query.firstOrNull("allowInsecure")?.toBoolean()
-                    ?: query.firstOrNull("allowinsecure")?.toBoolean(),
+                insecure = query.firstBoolOrNull(
+                    "allowInsecure", "allowinsecure", "allow_insecure", "insecure", "skip-cert-verify",
+                ),
                 wsPath = query.firstOrNull("path")?.let { URLDecoder.decode(it, "UTF-8") },
                 grpcServiceName = query.firstOrNull("serviceName"),
                 headers = query.firstOrNull("host")?.takeIf { it.isNotBlank() }?.let { mapOf("Host" to it) },
@@ -194,7 +196,11 @@ object UriParser {
             copy(
                 password = URLDecoder.decode(password, "UTF-8").ifBlank { null },
                 sni = query.firstOrNull("sni") ?: query.firstOrNull("peer"),
-                insecure = (query.firstOrNull("insecure") ?: query.firstOrNull("allowInsecure"))?.toBoolean(),
+                // hysteria2 links write this as `insecure=1`; see
+                // ProxyNode.parseBoolFlag for why toBoolean() was wrong here.
+                insecure = query.firstBoolOrNull(
+                    "insecure", "allowInsecure", "allow_insecure", "skip-cert-verify",
+                ),
                 // The obfs *kind* and its password are separate query keys:
                 // `obfs=gecko&obfs-password=...`. Reading only the password
                 // (as this used to) makes every gecko node look like a
@@ -222,6 +228,20 @@ object UriParser {
     private fun Map<String, List<String>>.firstIntOrNull(vararg keys: String): Int? =
         keys.firstNotNullOfOrNull { key -> this[key]?.firstOrNull()?.trim()?.toIntOrNull() }
 
+    /**
+     * First recognisable boolean among [keys], or `null` when none is present.
+     *
+     * Key order matters: the more specific spellings (`allowInsecure`,
+     * `skip-cert-verify`) are tried before the generic `insecure`, so a link
+     * that carries both — some clients emit `insecure=0&allowInsecure=1` —
+     * resolves to the intent rather than the default. Parsing itself lives in
+     * [ProxyNode.parseBoolFlag] so the Clash side and the tests share it.
+     */
+    private fun Map<String, List<String>>.firstBoolOrNull(vararg keys: String): Boolean? =
+        keys.firstNotNullOfOrNull { key ->
+            this[key]?.firstOrNull()?.let { ProxyNode.parseBoolFlag(it) }
+        }
+
     private fun parseTuic(body: String, subId: String?): ProxyNode? =
         parseGenericUserinfoUri(body, NodeType.TUIC, subId) { userinfo, query ->
             copy(
@@ -232,7 +252,9 @@ object UriParser {
                 congestionControl = query.firstOrNull("congestion_control"),
                 udpRelayMode = query.firstOrNull("udp_relay_mode"),
                 reduceRtt = query.firstOrNull("reduce_rtt")?.toBoolean(),
-                insecure = query.firstOrNull("allow_insecure")?.toBoolean(),
+                insecure = query.firstBoolOrNull(
+                    "allow_insecure", "allowInsecure", "insecure", "skip-cert-verify",
+                ),
             )
         }
 
@@ -241,7 +263,9 @@ object UriParser {
             copy(
                 password = URLDecoder.decode(password, "UTF-8").ifBlank { null },
                 sni = query.firstOrNull("sni"),
-                insecure = query.firstOrNull("insecure")?.toBoolean(),
+                insecure = query.firstBoolOrNull(
+                    "insecure", "allowInsecure", "allow_insecure", "skip-cert-verify",
+                ),
             )
         }
 
@@ -286,7 +310,11 @@ object UriParser {
         val at = main.lastIndexOf('@')
         if (at < 0) return null
         val userinfo = main.substring(0, at)
-        val hostPort = main.substring(at + 1)
+        // Standard URIs put a path here — `hysteria2://pw@host:8443/?insecure=1`
+        // is the form most generators emit. Left in place, the "/" lands inside
+        // the port and `toIntOrNull()` fails, which silently drops the whole
+        // line (parseUriList uses mapNotNull). No supported scheme uses a path.
+        val hostPort = main.substring(at + 1).substringBefore('/')
         val host: String
         val port: Int
         if (hostPort.startsWith("[")) {
