@@ -32,17 +32,25 @@ class Hy2ObfsConfigTest {
         hy2HopInterval = "30s",
     )
 
+    /** Finds the hy2 outbound, failing with the actual type list when absent. */
+    private fun hy2Outbound(json: String) =
+        Json.parseToJsonElement(json).jsonObject["outbounds"]!!.jsonArray
+            .map { it.jsonObject }
+            .let { all ->
+                val types = all.map { it["type"]?.jsonPrimitive?.content }
+                all.firstOrNull { it["type"]?.jsonPrimitive?.content == "hysteria2" }
+                    ?: error("no hysteria2 outbound emitted; outbound types were $types")
+            }
+
     @Test
     fun `sing-box emits gecko with packet sizing and server_ports`() {
         val json = ConfigBuilder.build(
             listOf(geckoNode()),
             ConfigBuilder.BuildOptions(selectedNodeTag = "SG-gecko"),
         )
-        val doc = Json.parseToJsonElement(json).jsonObject
-        val outbounds = doc["outbounds"]!!.jsonArray.map { it.jsonObject }
-        val hy2 = outbounds.first { it["type"]?.jsonPrimitive?.content == "hysteria2" }
+        val hy2 = hy2Outbound(json)
 
-        val obfs = hy2["obfs"]!!.jsonObject
+        val obfs = hy2["obfs"]?.jsonObject ?: error("hy2 outbound has no obfs: $hy2")
         check(obfs["type"]!!.jsonPrimitive.content == ObfsType.GECKO) { "obfs type must stay gecko" }
         check(obfs["password"]!!.jsonPrimitive.content == "geckopw") { "obfs password" }
         check(obfs["min_packet_size"]!!.jsonPrimitive.content == "512") { "gecko min_packet_size" }
@@ -62,11 +70,9 @@ class Hy2ObfsConfigTest {
             listOf(legacy),
             ConfigBuilder.BuildOptions(selectedNodeTag = "SG-gecko"),
         )
-        val doc = Json.parseToJsonElement(json).jsonObject
-        val hy2 = doc["outbounds"]!!.jsonArray.map { it.jsonObject }
-            .first { it["type"]?.jsonPrimitive?.content == "hysteria2" }
+        val hy2 = hy2Outbound(json)
 
-        val obfs = hy2["obfs"]!!.jsonObject
+        val obfs = hy2["obfs"]?.jsonObject ?: error("hy2 outbound has no obfs: $hy2")
         check(obfs["type"]!!.jsonPrimitive.content == ObfsType.SALAMANDER) { "must default to salamander" }
         check("min_packet_size" !in obfs) { "packet sizing is gecko-only" }
         check("server_ports" !in hy2) { "no ports requested, none emitted" }
