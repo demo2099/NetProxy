@@ -204,7 +204,22 @@ jobs:
             *)       TASKS=":app:assembleSlimRelease :app:assembleFullRelease" ;;
           esac
           echo "build_type=${BT}  tasks=${TASKS}"
-          ./gradlew $TASKS --no-daemon
+          # Job logs need admin rights to read, so a bare `exit 1` here tells
+          # nobody anything. Capture the log and emit the interesting lines as
+          # a SINGLE annotation: the per-run annotation count is capped, so one
+          # joined line survives where many small ones get truncated.
+          set +e
+          ./gradlew $TASKS --no-daemon > /tmp/build.log 2>&1
+          RC=$?
+          if [ $RC -ne 0 ]; then
+            echo "--- gradle exited $RC ---"
+            tail -60 /tmp/build.log
+            MSG=$(grep -E "^e: |FAILED|What went wrong|Caused by:|Missing class|Execution failed|error: |Lint found|fatal:" /tmp/build.log \
+              | tail -40 | tr '\n' '|' | sed 's/%/%25/g')
+            echo "::error::gradle exited ${RC}: ${MSG}"
+            exit $RC
+          fi
+          tail -20 /tmp/build.log
 
       # 未签名 APK 装到手机上会直接报「安装包未包含任何证书」，绝不能让这种包流出去。
       # 注意 v2/v3 签名的 APK 里**没有** META-INF/*.RSA，所以两种都要查。
