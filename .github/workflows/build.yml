@@ -174,6 +174,13 @@ jobs:
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "resolved tag=${TAG} (versionName=${VERSION})"
 
+      # 单元测试（src/test，两个 flavor 共用）。assembleRelease 不编译测试源集，
+      # 所以必须单独跑一次 —— 否则测试里的语法错误要到本地跑才暴露。
+      - name: Run unit tests
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:testSlimDebugUnitTest --no-daemon
+
       # 两个 flavor 都要编：slim（仅 sing-box）与 full（含 mihomo / Xray）
       - name: Build APK
         run: |
