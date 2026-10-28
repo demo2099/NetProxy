@@ -25,6 +25,7 @@ Android 上的**三内核**代理客户端（sing-box / mihomo / Xray 一键切�
 - **sing-box 1.14**：进程内 `libbox.aar`（gomobile，四 ABI），`CommandClient` 本地套接字热切换/测速/日志，无需重启
 - **mihomo (Clash Meta)**：sidecar 子进程（自编译 `cmfa` 标签规避 packages.xml 权限问题），Clash REST API 热切换、组测速、活跃连接管理、流量统计
 - **Xray v26**：官方安卓二进制 sidecar（arm64/x86_64），支持 ss/vmess/vless/trojan/socks/http/wireguard/**hysteria2**；切节点 = 重生成配置重启生效
+- **hysteria2 全量参数**：混淆区分 `salamander` / `gecko`（1.14 / 1.19.26 起的内核才支持 gecko），并支持 `mport` 端口跳跃 + `hop-interval`；sing-box 走 `server_ports`/`hop_interval`，mihomo 走 `ports`/`hop-interval`，Xray 走 `quicParams.udpHop`
 - **TUN 桥接**：sidecar 内核统一走 hev-socks5-tunnel（JNI 进程内库）把 VPN TUN 桥到本地 socks 口，规避子进程 fd 继承限制（v2rayNG 同款方案）
 - **防环**：节点服务器 IP + 国内 DNS 自动排除出 VPN 路由；GEOSITE/GEOIP 数据库随 APK 打包（mihomo 用 metadb，Xray 用 v2fly dat），冷启动无需联网下载
 - **DNS**：sing-box typed DNS；mihomo fake-ip + sniffer + proxy-server-nameserver；Xray 劫持 53 → 内置 DNS（国外 DoH 走代理 / 国内直连），不依赖节点 UDP 转发
@@ -146,7 +147,7 @@ app/src/main/java/com/interstellar/proxy/
 - sidecar TUN 桥：Android 子进程继承 fd 受限，hev-socks5-tunnel 以 JNI 进程内库读 TUN 转 socks5（v2rayNG 方案）
 - 运行中切内核：停止 → 重生成 → 自动重启（`pendingRestart` 吸收停止竞态）
 - 端口冲突自动规避：控制端口（9090）与混合入站（2080）在生成配置前各自 bind 探测，被占就换空闲端口并持久化（`ApiPort` / `LocalPort`）。内核把「端口绑不上」当致命错误 —— 一个节点都起不来，而原文只有一句英文，所以这两处都不能写死
-- 已知取舍：sidecar 内核（mihomo/Xray）的 DIRECT 出站无法跨进程 `protect()`，「绕过大陆」下国内站点经代理出国（sing-box 不受影响）；Xray v26 移除 `allowInsecure`，自签证书节点报 TLS 错
+- 已知取舍：sidecar 内核（mihomo/Xray）的 DIRECT 出站无法跨进程 `protect()`，「绕过大陆」下国内站点经代理出国（sing-box 不受影响）；Xray v26 移除 `allowInsecure`，自签证书节点报 TLS 错；**Xray 的 finalmask 只有 salamander，gecko 节点在 Xray 内核下会被跳过并在提示里说明**（sing-box / mihomo 均正常）
 - 技术栈：Kotlin + Jetpack Compose（Material3）、kotlinx-serialization、kaml、OkHttp、WorkManager
 
 ## Roadmap
