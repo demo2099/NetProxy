@@ -412,7 +412,13 @@ object ConfigBuilder {
                 node.downMbps?.let { put("down_mbps", it) }
                 putJsonObject("tls") {
                     put("enabled", true)
-                    node.sni?.let { put("server_name", it) } ?: put("server_name", node.server)
+                    // 不要写成 `node.sni?.let { put(...) } ?: put(...)`:
+                    // JsonObjectBuilder.put() 返回的是"被覆盖前的旧值", 新 key 时是 null,
+                    // 于是 elvis 一定会执行, 用 node.server 把正确的 SNI 覆盖掉。
+                    // 当面板的 host 是 IP 而 server_name 是域名时 (hy2 常见),
+                    // 客户端就会拿 IP 当 SNI 去校验, 必然报
+                    // x509: cannot validate certificate for <ip> ... no IP SANs。
+                    put("server_name", node.sni ?: node.server)
                     put("insecure", node.effectiveInsecure)
                     node.effectiveAlpn?.let { alpn -> putJsonArray("alpn") { alpn.forEach { add(it) } } }
                 }
@@ -429,7 +435,13 @@ object ConfigBuilder {
                 node.reduceRtt?.let { put("reduce_rtt", it) }
                 putJsonObject("tls") {
                     put("enabled", true)
-                    node.sni?.let { put("server_name", it) } ?: put("server_name", node.server)
+                    // 不要写成 `node.sni?.let { put(...) } ?: put(...)`:
+                    // JsonObjectBuilder.put() 返回的是"被覆盖前的旧值", 新 key 时是 null,
+                    // 于是 elvis 一定会执行, 用 node.server 把正确的 SNI 覆盖掉。
+                    // 当面板的 host 是 IP 而 server_name 是域名时 (hy2 常见),
+                    // 客户端就会拿 IP 当 SNI 去校验, 必然报
+                    // x509: cannot validate certificate for <ip> ... no IP SANs。
+                    put("server_name", node.sni ?: node.server)
                     put("insecure", node.effectiveInsecure)
                     node.effectiveAlpn?.let { alpn -> putJsonArray("alpn") { alpn.forEach { add(it) } } }
                 }
