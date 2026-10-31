@@ -6,8 +6,11 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import com.interstellar.proxy.InterstellarApplication
 import kotlinx.coroutines.delay
+import java.net.Inet6Address
 import java.net.InetSocketAddress
+import java.net.NetworkInterface
 import java.net.Socket
+import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 
 /**
@@ -52,6 +55,66 @@ object DirectPing {
         }
         return (System.currentTimeMillis() - startedAt).toInt()
     }
+
+    /**
+     * [tcpConnect] with retries — keeps the first successful connect.
+     *
+     * Peak-hour international paths routinely drop 30-45% of packets (measured
+     * 2026-10-31 on China Telecom: HK node 43% loss over IPv6 while the same
+     * server answers 3% over IPv4). A single connect then reports "timeout" for
+     * a node that is perfectly reachable, so the list flickers between a delay
+     * and 超时 on every sweep. Three attempts turn a 45% loss into ~1% failure.
+     *
+     * Only failures are retried: a node that answers on the first SYN keeps its
+     * real latency instead of being measured three times over.
+     */
+    fun tcpConnectRetry(
+        host: String,
+        port: Int,
+        timeoutMs: Int = 3000,
+        attempts: Int = 3,
+    ): Int {
+        var last: Throwable? = null
+        repeat(attempts.coerceAtLeast(1)) {
+            try {
+                return tcpConnect(host, port, timeoutMs)
+            } catch (t: Throwable) {
+                last = t
+            }
+        }
+        throw last ?: SocketTimeoutException()
+    }
+
+    /** True when [host] is an IPv6 literal, i.e. dialing it needs local IPv6. */
+    fun isIpv6Literal(host: String): Boolean = host.contains(':')
+
+    /**
+     * Whether this device has any usable global IPv6 address.
+     *
+     * A node published as an IPv6 literal is unreachable on a v4-only network
+     * and the kernel fails it in single-digit ms with ENETUNREACH. Reported as
+     * "超时" that looks like a dead node, so the sweep asks this first and
+     * labels the node "本机无 IPv6" instead.
+     */
+    fun hasGlobalIpv6(): Boolean = runCatching {
+        val interfaces = NetworkInterface.getNetworkInterfaces() ?: return@runCatching false
+        while (interfaces.hasMoreElements()) {
+            val nif = interfaces.nextElement()
+            if (!nif.isUp || nif.isLoopback) continue
+            val addresses = nif.inetAddresses
+            while (addresses.hasMoreElements()) {
+                val address = addresses.nextElement()
+                if (address is Inet6Address &&
+                    !address.isLinkLocalAddress &&
+                    !address.isLoopbackAddress &&
+                    !address.isAnyLocalAddress
+                ) {
+                    return@runCatching true
+                }
+            }
+        }
+        false
+    }.getOrDefault(false)
 
     /**
      * Idempotent kick of the network tracker; optionally wait for the first

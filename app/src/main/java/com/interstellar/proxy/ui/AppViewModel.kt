@@ -1306,12 +1306,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 val failed = java.util.concurrent.atomic.AtomicInteger()
                 val reasons = java.util.concurrent.ConcurrentHashMap<String, Int>()
                 val semaphore = kotlinx.coroutines.sync.Semaphore(12)
+                // one probe for the whole sweep: an IPv6-literal node on a
+                // v4-only network fails in single-digit ms with ENETUNREACH,
+                // which used to surface as a bogus "超时" on every IPv6 node
+                val localIpv6 = DirectPing.hasGlobalIpv6()
                 kotlinx.coroutines.coroutineScope {
                     pairs.forEach { (node, tag) ->
                         launch {
                             semaphore.withPermit {
                                 val outcome = runCatching {
-                                    DirectPing.tcpConnect(node.server, node.port, 3000)
+                                    // peak-hour international paths drop 30-45% of
+                                    // packets; a single SYN flickers between a delay
+                                    // and 超时, so retry before declaring failure
+                                    DirectPing.tcpConnectRetry(node.server, node.port, 3000, 3)
                                 }
                                 val value = when {
                                     outcome.exceptionOrNull() != null -> TIMEOUT_DELAY
@@ -1319,11 +1326,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                                 }
                                 if (value == TIMEOUT_DELAY) {
                                     failed.incrementAndGet()
-                                    val reason = when (val e = outcome.exceptionOrNull()) {
-                                        null -> "超时"
-                                        is java.net.SocketTimeoutException -> "超时"
-                                        is java.net.ConnectException -> "连接被拒"
-                                        is java.net.UnknownHostException -> "域名解析失败"
+                                    val e = outcome.exceptionOrNull()
+                                    val reason = when {
+                                        DirectPing.isIpv6Literal(node.server) && !localIpv6 ->
+                                            "本机无 IPv6"
+                                        e == null -> "超时"
+                                        e is java.net.SocketTimeoutException -> "超时"
+                                        e is java.net.ConnectException -> "连接被拒"
+                                        e is java.net.UnknownHostException -> "域名解析失败"
                                         else -> e.message?.take(18)?.takeIf { it.isNotBlank() }
                                             ?: e.javaClass.simpleName
                                     }
