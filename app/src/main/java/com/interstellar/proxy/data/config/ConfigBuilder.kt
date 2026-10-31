@@ -212,7 +212,9 @@ object ConfigBuilder {
         extras.forEach { add(it) }
         // fixed outbounds
         add(buildJsonObject { put("type", "direct"); put("tag", DIRECT_TAG) })
-        add(buildJsonObject { put("type", "block"); put("tag", BLOCK_TAG) })
+        // note: no "block" outbound — the ad rule uses `action: reject`, which is
+        // silent in the log (see buildRoute). BLOCK_TAG stays reserved so a node
+        // can never be tagged with it.
         // note: no "dns" outbound — removed in sing-box 1.13, replaced by the
         // hijack-dns route action above
     }
@@ -767,12 +769,25 @@ object ConfigBuilder {
                     },
                 )
             }
-            // ads blocked first so tracker domains never reach the CN rule
+            // ads blocked first so tracker domains never reach the CN rule.
+            //
+            // `action: reject` rather than the legacy `outbound: block`, and not
+            // for tidiness: the block outbound answers with a plain error, which
+            // the connection manager reports at ERROR level —
+            //
+            //     ERROR connection: open connection to 101.36.166.16:443 using
+            //           outbound/block[block]: operation not permitted
+            //
+            // once per refused socket. Ad SDKs retry in a tight loop (measured:
+            // ~20 attempts in 2s from one Baidu SDK), so the log fills with
+            // hundreds of fake "errors" and buries anything real. A rule action
+            // is handled inside the router and logs nothing at all — verified
+            // on v1.14.4: same refused connection, zero log lines.
             if (options.adBlock) {
                 add(
                     buildJsonObject {
                         putJsonArray("rule_set") { add("category-ads-all") }
-                        put("outbound", BLOCK_TAG)
+                        put("action", "reject")
                     },
                 )
             }
