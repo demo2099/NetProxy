@@ -97,6 +97,10 @@ fun NodesPage(viewModel: AppViewModel) {
     val gridView by viewModel.nodesGridView.collectAsState()
     var sortMode by rememberSaveable { mutableStateOf(0) } // 0 延迟 1 名称
     var detailItem by remember { mutableStateOf<NodeEntry?>(null) }
+    // 长按不再直接弹详情（详情是一整屏滚动内容，长按多半是想测一下这个节点），
+    // 先给一个三项小菜单：测速 / Ping / 详情。
+    var actionItem by remember { mutableStateOf<NodeEntry?>(null) }
+    val nodeTesting by viewModel.nodeTesting.collectAsState()
 
     val mainGroup = groups.find { it.tag == ConfigBuilder.GROUP_TAG }
     // the pool the generated config runs on: active sub, or the mix union
@@ -455,7 +459,7 @@ fun NodesPage(viewModel: AppViewModel) {
                             delay = delays[item.tag] ?: item.delay,
                             selected = item.tag == selectedTag,
                             onClick = { onNodeTap(item) },
-                            onLongPress = { if (item.tag != ConfigBuilder.AUTO_TAG) detailItem = item },
+                            onLongPress = { if (item.tag != ConfigBuilder.AUTO_TAG) actionItem = item },
                         )
                     }
                 }
@@ -478,7 +482,7 @@ fun NodesPage(viewModel: AppViewModel) {
                             delay = delays[item.tag] ?: item.delay,
                             selected = item.tag == selectedTag,
                             onClick = { onNodeTap(item) },
-                            onLongPress = { if (item.tag != ConfigBuilder.AUTO_TAG) detailItem = item },
+                            onLongPress = { if (item.tag != ConfigBuilder.AUTO_TAG) actionItem = item },
                         )
                     }
                 }
@@ -486,9 +490,37 @@ fun NodesPage(viewModel: AppViewModel) {
         }
     }
 
-    detailItem?.let { item ->
-        NodeDetailSheet(
+    actionItem?.let { item ->
+        NodeActionSheet(
             item = item,
+            testing = nodeTesting == item.tag,
+            // 点完就收菜单：结果直接回填到列表里的延迟徽章，比在菜单里
+            // 干等着更直接，也不用多点一次关闭。
+            onTest = {
+                actionItem = null
+                viewModel.testSingleNode(item.tag, item.node)
+            },
+            onPing = {
+                actionItem = null
+                viewModel.testSingleNode(item.tag, item.node, tcpOnly = true)
+            },
+            onDetail = {
+                actionItem = null
+                detailItem = item
+            },
+            onDismiss = { actionItem = null },
+        )
+    }
+
+    detailItem?.let { item ->
+        // 单节点测速的结果直接写回 delays，但 detailItem 是点开时的快照，
+        // 不重新取一次的话详情里的「延迟」会一直停在旧值。
+        val live = item.copy(delay = delays[item.tag] ?: item.delay)
+        NodeDetailSheet(
+            item = live,
+            testing = nodeTesting == item.tag,
+            onTest = { viewModel.testSingleNode(live.tag, live.node) },
+            onPing = { viewModel.testSingleNode(live.tag, live.node, tcpOnly = true) },
             onDismiss = { detailItem = null },
             onToggleCertVerify = { verify ->
                 item.node?.let { n ->
@@ -501,6 +533,103 @@ fun NodesPage(viewModel: AppViewModel) {
             },
         )
     }
+}
+
+/**
+ * 长按节点弹出的小菜单。
+ *
+ * 长按原本直接拉开 NodeDetailSheet —— 那是一整屏可滚动内容，而长按的意图
+ * 多半只是「这个节点现在到底通不通」。菜单把三件事摊开，点错也不会有代价。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NodeActionSheet(
+    item: NodeEntry,
+    testing: Boolean,
+    onTest: () -> Unit,
+    onPing: () -> Unit,
+    onDetail: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val colors = LocalInterstellarColors.current
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = colors.panelSolid,
+        shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 26.dp),
+        ) {
+            Text(
+                item.label,
+                color = colors.text,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            item.node?.let { n ->
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "${n.protocolSummary()} · ${n.server}:${n.port}",
+                    color = colors.textTertiary,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.height(14.dp))
+            ActionRow(
+                title = if (testing) "测速中…" else "测速",
+                subtitle = "通过当前内核请求一次真实 URL",
+                enabled = !testing && item.node != null,
+                onClick = onTest,
+            )
+            ActionRow(
+                title = "Ping",
+                subtitle = "直接 TCP 握手，不经过内核",
+                enabled = !testing && item.node != null,
+                onClick = onPing,
+            )
+            ActionRow(
+                title = "节点详情",
+                subtitle = "协议 / 服务器 / 凭据 / 证书校验",
+                enabled = true,
+                onClick = onDetail,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ActionRow(
+    title: String,
+    subtitle: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = LocalInterstellarColors.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(colors.panel)
+            .then(if (enabled) Modifier.pressableClick { onClick() } else Modifier)
+            .alpha(if (enabled) 1f else 0.45f)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(2.dp))
+            Text(subtitle, color = colors.textTertiary, fontSize = 11.sp)
+        }
+        Text("›", color = colors.textTertiary, fontSize = 18.sp)
+    }
+    Spacer(Modifier.height(8.dp))
 }
 
 /** Stats snapshot shown after a url-test / ping run finishes. */
@@ -841,6 +970,9 @@ private fun NodeGridCell(
 @Composable
 private fun NodeDetailSheet(
     item: NodeEntry,
+    testing: Boolean,
+    onTest: () -> Unit,
+    onPing: () -> Unit,
     onDismiss: () -> Unit,
     onToggleCertVerify: (Boolean) -> Unit,
 ) {
@@ -857,10 +989,37 @@ private fun NodeDetailSheet(
                 .padding(bottom = 26.dp),
         ) {
             Text("节点信息", color = colors.text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(12.dp))
+            // 单节点测速放在最上面：进详情多半就是为了判断这个节点还通不通，
+            // 以前只能退回列表点整池「测速」，等于把所有人都测一遍。
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                NodeTestButton(
+                    label = "测速",
+                    busy = testing,
+                    enabled = item.node != null,
+                    tint = colors.primary,
+                    background = colors.primaryMuted,
+                    onClick = onTest,
+                    modifier = Modifier.weight(1f),
+                )
+                NodeTestButton(
+                    label = "Ping",
+                    busy = false,
+                    enabled = item.node != null && !testing,
+                    tint = colors.accent,
+                    background = colors.bgDeep,
+                    onClick = onPing,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Spacer(Modifier.height(6.dp))
             DetailRow("名称", item.tag)
             item.source?.let { DetailRow("来源", it) }
             DetailRow("延迟", when {
+                item.delay >= 65_000 -> "超时"
                 item.delay > 0 -> "${item.delay} ms"
                 item.testedAt > 0 -> "超时"
                 else -> "未测速"
@@ -1076,6 +1235,36 @@ private fun HintRow(text: String) {
         fontSize = 11.sp,
         modifier = Modifier.padding(bottom = 4.dp),
     )
+}
+
+/** 详情页顶部的单节点测速 / Ping 按钮。 */
+@Composable
+private fun NodeTestButton(
+    label: String,
+    busy: Boolean,
+    enabled: Boolean,
+    tint: androidx.compose.ui.graphics.Color,
+    background: androidx.compose.ui.graphics.Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val clickable = enabled && !busy
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .height(42.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(background)
+            .then(if (clickable) Modifier.pressableClick { onClick() } else Modifier)
+            .alpha(if (enabled) 1f else 0.45f),
+    ) {
+        Text(
+            if (busy) "测速中…" else label,
+            color = tint,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
 }
 
 @Composable

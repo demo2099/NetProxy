@@ -391,6 +391,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _pinging = MutableStateFlow(false)
     val pinging: StateFlow<Boolean> = _pinging
 
+    /**
+     * Tag of the node a single-node test is currently running on, null otherwise.
+     * 单节点测速只锁自己那一个节点，不占用整池的 [testing]/[pinging]，
+     * 否则在详情页点一下就会把列表顶部的批量进度条也点着。
+     */
+    private val _nodeTesting = MutableStateFlow<String?>(null)
+    val nodeTesting: StateFlow<String?> = _nodeTesting
+
     private val delaysMutex = kotlinx.coroutines.sync.Mutex()
 
     fun showToast(text: String, kind: UiToast.Kind) {
@@ -1351,6 +1359,105 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } finally {
                 _pinging.value = false
                 _pingProgress.value = null
+            }
+        }
+    }
+
+    /**
+     * 单节点测速（节点详情页顶部按钮 / 长按菜单用）。
+     *
+     * 三条路的「延迟」含义不同，混用会误导，所以按当前状态选路：
+     *  - 已连接 + mihomo：Clash API 的 per-proxy delay，真实走代理的耗时。
+     *  - 已连接 + sing-box：对该 outbound 单独发 urlTest，等内核把延迟推回来。
+     *  - 未连接 / xray：直接 TCP 握手（[DirectPing]，绕过本地 tun 栈）。
+     *    hysteria2/tuic/wireguard 是 UDP，TCP 握手测不到 —— 说明原因，
+     *    而不是让它显示成「超时」（那是假故障）。
+     *
+     * @param tcpOnly 强制 TCP 握手（「Ping」按钮）。已连接时它测的是物理链路，
+     *                不经过代理，不能和「测速」混为一谈。
+     */
+    fun testSingleNode(
+        tag: String,
+        node: com.interstellar.proxy.data.model.ProxyNode?,
+        tcpOnly: Boolean = false,
+    ) {
+        if (_nodeTesting.value != null) return
+        if (node == null) {
+            showToast("节点信息缺失，无法测速", UiToast.Kind.Error)
+            return
+        }
+        _nodeTesting.value = tag
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val connected = _status.value == Status.Started
+                val udpOnly = node.type in setOf(
+                    com.interstellar.proxy.data.model.NodeType.HYSTERIA2,
+                    com.interstellar.proxy.data.model.NodeType.TUIC,
+                    com.interstellar.proxy.data.model.NodeType.WIREGUARD,
+                ) || node.network == "quic"
+
+                var value = TIMEOUT_DELAY
+                var note: String? = null
+
+                when {
+                    !tcpOnly && connected && Settings.coreKind == CoreKind.MIHOMO -> {
+                        val d = runCatching { clashApi.proxyDelay(tag) }.getOrNull()
+                        if (d != null && d > 0) value = d else note = "内核没有返回延迟"
+                    }
+
+                    !tcpOnly && connected && Settings.coreKind == CoreKind.SINGBOX -> {
+                        val before = _delays.value[tag]
+                        val sent = runCatching {
+                            CommandTarget.standaloneClient().urlTest(tag)
+                        }.isSuccess
+                        if (!sent) {
+                            note = "测速命令发送失败"
+                        } else {
+                            // 内核会把结果通过 outbounds 流推回来，_delays 因此变化。
+                            // 用「变了没有」判断完成，而不是「值是不是 TIMEOUT_DELAY」——
+                            // 后者会把「测了但失败」误报成「内核没返回」。
+                            var got = false
+                            val deadline =
+                                System.currentTimeMillis() + PER_NODE_TEST_TIMEOUT_MS + 6_000
+                            while (System.currentTimeMillis() < deadline) {
+                                val now = _delays.value[tag]
+                                if (now != null && now != before) {
+                                    value = now
+                                    got = true
+                                    break
+                                }
+                                delay(250)
+                            }
+                            if (!got) note = "内核没有返回延迟"
+                        }
+                    }
+
+                    udpOnly -> {
+                        note = "UDP 协议（hysteria2/tuic/wireguard）测不到 TCP Ping，请连接后用「测速」"
+                    }
+
+                    else -> {
+                        DirectPing.warmup(if (connected) 1_500 else 0)
+                        val outcome = runCatching {
+                            DirectPing.tcpConnectRetry(node.server, node.port, 3000, 3)
+                        }
+                        value = if (outcome.exceptionOrNull() != null) {
+                            TIMEOUT_DELAY
+                        } else {
+                            outcome.getOrDefault(0).coerceAtLeast(1)
+                        }
+                    }
+                }
+
+                if (note != null) {
+                    showToast(note, UiToast.Kind.Error)
+                } else {
+                    delaysMutex.withLock {
+                        _delays.value = _delays.value.toMutableMap().also { it[tag] = value }
+                    }
+                }
+            } finally {
+                _nodeTesting.value = null
             }
         }
     }

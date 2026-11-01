@@ -10,6 +10,7 @@ import android.os.PowerManager
 import androidx.core.content.getSystemService
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.SetupOptions
+import com.interstellar.proxy.core.AppLog
 import com.interstellar.proxy.data.RulesStore
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
@@ -25,6 +26,17 @@ class InterstellarApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+
+        // 日志落盘 + 崩溃捕获要在最前面：这两样一旦晚装，之前发生的崩溃
+        // 就彻底没痕迹了。日志页因此能看到「上次运行是怎么结束的」。
+        runCatching {
+            AppLog.install(filesDir)
+            AppLog.installCrashHandler()
+            AppLog.log(
+                "app",
+                "启动 v${BuildConfig.VERSION_NAME} · pid=${android.os.Process.myPid()}",
+            )
+        }
 
         // hev JNI bridge must register on a thread WITH a classloader (main);
         // a first touch from a coroutine IO thread aborts the whole VM
