@@ -1113,7 +1113,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                             val result = clashApi.groupDelay(groupTag)
                             if (result != null) {
                                 _delays.value = _delays.value.toMutableMap().also { map ->
-                                    result.forEach { (name, delay) -> map[name] = delay }
+                                    result.forEach { (name, delay) ->
+                                        // mihomo 对失败节点返回 <=0；如果直接写 0，
+                                        // 节点卡片会因为 selector item 的 urlTestTime
+                                        // 仍为 0 而显示「未测」。统一用超时哨兵值。
+                                        map[name] = if (delay <= 0) TIMEOUT_DELAY else delay
+                                    }
                                 }
                                 _testProgress.value = result.size to result.size
                             } else {
@@ -1133,6 +1138,24 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                             // (groupDelay(AUTO_TAG)) and the disconnected path.
                             if (!runKernelUrlTest(manual = true)) {
                                 _message.value = "测速失败: 命令发送失败"
+                            } else {
+                                // runKernelUrlTest 的 settle 结束后，失败的节点可能
+                                // 只拿到 0 或根本不在 _delays 里；selector 的 items
+                                // 又不会同步 urlTestTime，导致卡片显示「未测」。
+                                // 把 AUTO 组成员中无有效延迟的 tag 统一标为超时。
+                                val members = _groups.value
+                                    .find { it.tag == ConfigBuilder.AUTO_TAG }
+                                    ?.items?.map { it.tag }
+                                if (!members.isNullOrEmpty()) {
+                                    _delays.value = _delays.value.toMutableMap().also { map ->
+                                        for (tag in members) {
+                                            val v = map[tag]
+                                            if (v == null || v <= 0 || v >= TIMEOUT_DELAY) {
+                                                map[tag] = TIMEOUT_DELAY
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
