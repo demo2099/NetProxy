@@ -211,6 +211,23 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** True while the in-flight kernel url-test run belongs to the manual button. */
     @Volatile private var kernelTestManual = false
 
+    /**
+     * Results already reported in the current run, and when the newest one
+     * landed. Drives the idle-settle: a run is done once results stop coming
+     * in, not once every member has reported — the kernel silently skips some
+     * members, and waiting for those costs the full 25s cap.
+     */
+    @Volatile private var testDone = 0
+    @Volatile private var testLastResultAt = 0L
+
+    /**
+     * tag → kernel url-test stamp (epoch seconds), mirrored from the outbounds
+     * stream. A single-node test can't use "did the delay value change" to
+     * detect completion: retesting a dead node yields 65535 again, so the
+     * value is identical and the caller would spin until the cap.
+     */
+    private val testStamps = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
     /** sing-box's per-node url-test HTTP timeout (constant.TCPTimeout, hardcoded in the kernel). */
     private val PER_NODE_TEST_TIMEOUT_MS = 15_000L
 
@@ -435,6 +452,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
         /** Sentinel delay for timed-out / unreachable nodes (ping & url-test). */
         const val TIMEOUT_DELAY = 65535
+
+        /**
+         * No new url-test result for this long ⇒ the run is over. Results
+         * stream in concurrently within a few hundred ms of each other, so a
+         * quiet gap this wide only happens when the kernel has nothing left
+         * to report (dead nodes report at the 15s kernel timeout instead).
+         */
+        const val SETTLE_QUIET_MS = 2_500L
     }
 
     private val commandClient = CommandClient(
@@ -496,6 +521,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 val map = _delays.value.toMutableMap()
                 for (item in outbounds) {
                     map[item.tag] = item.urlTestDelay
+                    // keep the per-node stamp so a single-node test can tell
+                    // "the kernel finished this node" from "value unchanged"
+                    if (item.urlTestTime > 0) testStamps[item.tag] = item.urlTestTime
                 }
                 _delays.value = map
                 // url-test progress: count results stamped after this run
@@ -503,6 +531,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 // runs settle silently underneath.
                 if (testStartEpoch > 0) {
                     val done = outbounds.count { it.urlTestTime >= testStartEpoch }
+                    if (done > testDone) {
+                        testDone = done
+                        testLastResultAt = System.currentTimeMillis()
+                    }
                     val prevTotal = _testProgress.value?.second ?: 0
                     val total = maxOf(prevTotal, outbounds.size)
                     if (total > 0) {
@@ -1104,7 +1136,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                             }
                         }
                     }
-                    if (Settings.coreKind == CoreKind.MIHOMO) delay(12_000)
+                    // No settle delay here: groupDelay is a blocking call that
+                    // already returns the complete map, and runKernelUrlTest
+                    // owns its own settle. A fixed 12s sleep used to sit right
+                    // here doing nothing but keeping the spinner up.
                 } else {
                     runDisconnectedUrlTest()
                 }
@@ -1136,15 +1171,26 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
      * Wait for the kernel url-test to finish. Nodes test concurrently, each
      * with sing-box's own per-node HTTP timeout (constant.TCPTimeout = 15s,
      * not configurable), so the run is bounded by that plus scheduling
-     * margin — wait for the stream's done>=total clear, capped at 15s+10s.
-     * No independent overall-stall heuristic.
+     * margin. Settles on the first of: every member reported, no new result
+     * for [SETTLE_QUIET_MS], or the hard cap.
      */
     private suspend fun awaitUrlTestSettled(capMs: Long = PER_NODE_TEST_TIMEOUT_MS + 10_000) {
         val deadline = System.currentTimeMillis() + capMs
         while (System.currentTimeMillis() < deadline && testStartEpoch > 0) {
-            delay(500)
+            if (settledByQuiet()) break
+            delay(250)
         }
     }
+
+    /**
+     * True once results have stopped arriving. The kernel skips members it
+     * can't test (unsupported protocol, disabled entry) and never stamps
+     * them, so "done >= total" may never be reached — waiting for it means
+     * staring at a spinner for the whole 25s cap while the numbers are
+     * already on screen.
+     */
+    private fun settledByQuiet(): Boolean =
+        testDone > 0 && System.currentTimeMillis() - testLastResultAt >= SETTLE_QUIET_MS
 
     /**
      * One kernel url-test run over the AUTO group, serialized between the
@@ -1158,6 +1204,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun runKernelUrlTest(manual: Boolean): Boolean =
         kernelUrlTestMutex.withLock {
             kernelTestManual = manual
+            testDone = 0
+            testLastResultAt = 0L
             testStartEpoch = System.currentTimeMillis() / 1000
             if (manual) {
                 // a colliding run's settle may have flashed these off while
@@ -1173,7 +1221,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 return@withLock false
             }
             val deadline = System.currentTimeMillis() + PER_NODE_TEST_TIMEOUT_MS + 10_000
-            while (testStartEpoch > 0 && System.currentTimeMillis() < deadline) delay(500)
+            while (testStartEpoch > 0 && System.currentTimeMillis() < deadline) {
+                // settle as soon as results stop flowing; late arrivals still
+                // land in _delays because that write sits outside the epoch
+                // guard, so the list keeps filling in behind the closed spinner
+                if (settledByQuiet()) break
+                delay(250)
+            }
             testStartEpoch = 0 // cap fallback; callers' finally owns the UI state
             true
         }
@@ -1234,6 +1288,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 if (!connected) throw IllegalStateException("测速服务启动超时")
                 kernelTestManual = true // manual run: progress + settle own the UI state
+                testDone = 0
+                testLastResultAt = 0L
                 testStartEpoch = System.currentTimeMillis() / 1000
                 val ok = runCatching {
                     CommandTarget.standaloneClient().urlTest(ConfigBuilder.AUTO_TAG)
@@ -1381,7 +1437,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         node: com.interstellar.proxy.data.model.ProxyNode?,
         tcpOnly: Boolean = false,
     ) {
-        if (_nodeTesting.value != null) return
+        if (_nodeTesting.value != null) {
+            // 静默 return 会让人以为"点了没反应" —— 明确说一句
+            showToast("正在测速，请稍候", UiToast.Kind.Error)
+            return
+        }
         if (node == null) {
             showToast("节点信息缺失，无法测速", UiToast.Kind.Error)
             return
@@ -1398,41 +1458,58 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
                 var value = TIMEOUT_DELAY
                 var note: String? = null
+                // UDP 节点连不上不代表"超时"，不能写回哨兵值 —— 那会把一个
+                // 根本没测的节点标成故障。
+                var writeBack = true
 
                 when {
                     !tcpOnly && connected && Settings.coreKind == CoreKind.MIHOMO -> {
                         val d = runCatching { clashApi.proxyDelay(tag) }.getOrNull()
-                        if (d != null && d > 0) value = d else note = "内核没有返回延迟"
+                        if (d != null && d > 0) {
+                            value = d
+                        } else {
+                            value = TIMEOUT_DELAY
+                            note = "超时：5 秒内没有握手成功"
+                        }
                     }
 
                     !tcpOnly && connected && Settings.coreKind == CoreKind.SINGBOX -> {
-                        val before = _delays.value[tag]
+                        val beforeStamp = testStamps[tag] ?: 0L
+                        val beforeDelay = _delays.value[tag]
                         val sent = runCatching {
                             CommandTarget.standaloneClient().urlTest(tag)
                         }.isSuccess
                         if (!sent) {
+                            value = TIMEOUT_DELAY
                             note = "测速命令发送失败"
                         } else {
-                            // 内核会把结果通过 outbounds 流推回来，_delays 因此变化。
-                            // 用「变了没有」判断完成，而不是「值是不是 TIMEOUT_DELAY」——
-                            // 后者会把「测了但失败」误报成「内核没返回」。
+                            // 完成判定看内核盖的时间戳，不能只看「值变没变」：
+                            // 对一个本来就超时的节点重测，新值还是 65535，
+                            // 值不变 ⇒ 白等到超时上限，还什么都没反馈。
                             var got = false
                             val deadline =
-                                System.currentTimeMillis() + PER_NODE_TEST_TIMEOUT_MS + 6_000
+                                System.currentTimeMillis() + PER_NODE_TEST_TIMEOUT_MS + 3_000
                             while (System.currentTimeMillis() < deadline) {
+                                val stamp = testStamps[tag] ?: 0L
                                 val now = _delays.value[tag]
-                                if (now != null && now != before) {
-                                    value = now
+                                if (stamp > beforeStamp || (now != null && now != beforeDelay)) {
                                     got = true
                                     break
                                 }
-                                delay(250)
+                                delay(200)
                             }
-                            if (!got) note = "内核没有返回延迟"
+                            value = _delays.value[tag] ?: TIMEOUT_DELAY
+                            if (!got) {
+                                value = TIMEOUT_DELAY
+                                note = "超时：15 秒内没有握手成功"
+                            } else if (value <= 0 || value >= TIMEOUT_DELAY) {
+                                note = "超时：节点没有响应"
+                            }
                         }
                     }
 
                     udpOnly -> {
+                        writeBack = false
                         note = "UDP 协议（hysteria2/tuic/wireguard）测不到 TCP Ping，请连接后用「测速」"
                     }
 
@@ -1441,21 +1518,31 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         val outcome = runCatching {
                             DirectPing.tcpConnectRetry(node.server, node.port, 3000, 3)
                         }
-                        value = if (outcome.exceptionOrNull() != null) {
+                        val err = outcome.exceptionOrNull()
+                        value = if (err != null) {
                             TIMEOUT_DELAY
                         } else {
                             outcome.getOrDefault(0).coerceAtLeast(1)
                         }
+                        if (err != null) {
+                            note = when (err) {
+                                is java.net.SocketTimeoutException -> "Ping 超时：3 秒内没有完成握手"
+                                is java.net.UnknownHostException -> "Ping 失败：域名解析失败"
+                                is java.net.ConnectException -> "Ping 失败：连接被拒"
+                                else -> "Ping 失败：" + (err.message ?: err.javaClass.simpleName)
+                            }
+                        }
                     }
                 }
 
-                if (note != null) {
-                    showToast(note, UiToast.Kind.Error)
-                } else {
+                // 成功和超时都要写回：徽章是唯一一直在屏幕上的反馈，
+                // 只在成功时写，失败就变成"点了没反应"。
+                if (writeBack) {
                     delaysMutex.withLock {
                         _delays.value = _delays.value.toMutableMap().also { it[tag] = value }
                     }
                 }
+                note?.let { showToast(it, UiToast.Kind.Error) }
             } finally {
                 _nodeTesting.value = null
             }

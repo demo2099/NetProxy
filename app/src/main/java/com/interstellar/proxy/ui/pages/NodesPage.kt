@@ -141,6 +141,20 @@ fun NodesPage(viewModel: AppViewModel) {
         }
         prevRunning = testRunning
     }
+    // 转圈是按「结果不再新增」提前收的，死节点要等到内核 15s 超时才回报。
+    // 那些晚到的结果仍会写进 delays，摘要条必须跟着重算，否则会出现
+    // 「摘要说失败 12 个、列表里这 12 个却有延迟」的自相矛盾。
+    LaunchedEffect(testSummary != null, delays, testRunning) {
+        val s = testSummary
+        if (s != null && !testRunning) {
+            testSummary = computeNodesTestSummary(
+                lastMode,
+                ConfigBuilder.tagsFor(storedNodes),
+                delays,
+                if (lastMode == "Ping") viewModel.lastPingReport else null,
+            )
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -460,6 +474,7 @@ fun NodesPage(viewModel: AppViewModel) {
                             selected = item.tag == selectedTag,
                             onClick = { onNodeTap(item) },
                             onLongPress = { if (item.tag != ConfigBuilder.AUTO_TAG) actionItem = item },
+                            busy = nodeTesting == item.tag,
                         )
                     }
                 }
@@ -483,6 +498,7 @@ fun NodesPage(viewModel: AppViewModel) {
                             selected = item.tag == selectedTag,
                             onClick = { onNodeTap(item) },
                             onLongPress = { if (item.tag != ConfigBuilder.AUTO_TAG) actionItem = item },
+                            busy = nodeTesting == item.tag,
                         )
                     }
                 }
@@ -817,6 +833,7 @@ private fun NodeRow(
     selected: Boolean,
     onClick: () -> Unit,
     onLongPress: () -> Unit,
+    busy: Boolean = false,
 ) {
     val colors = LocalInterstellarColors.current
     val light = 0.2126f * colors.bg.red + 0.7152f * colors.bg.green + 0.0722f * colors.bg.blue > 0.5f
@@ -879,8 +896,22 @@ private fun NodeRow(
                     modifier = Modifier.widthIn(max = 128.dp),
                 )
             }
-            DelayBadge(delay, tested = item.testedAt > 0)
+            if (busy) TestingBadge() else DelayBadge(delay, tested = item.testedAt > 0)
         }
+    }
+}
+
+/** 单节点测速进行中的徽章 —— 覆盖延迟值，让「点了」立刻有回应。 */
+@Composable
+private fun TestingBadge(modifier: Modifier = Modifier) {
+    val colors = LocalInterstellarColors.current
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(50))
+            .background(colors.primary.copy(alpha = 0.14f))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    ) {
+        Text("测速中", color = colors.primary, fontSize = 12.sp)
     }
 }
 
@@ -892,6 +923,7 @@ private fun NodeGridCell(
     selected: Boolean,
     onClick: () -> Unit,
     onLongPress: () -> Unit,
+    busy: Boolean = false,
 ) {
     val colors = LocalInterstellarColors.current
     val light = 0.2126f * colors.bg.red + 0.7152f * colors.bg.green + 0.0722f * colors.bg.blue > 0.5f
@@ -957,11 +989,15 @@ private fun NodeGridCell(
                 )
                 Spacer(Modifier.height(5.dp))
             }
-            DelayBadge(
-                delay = delay,
-                modifier = Modifier.align(Alignment.End),
-                tested = item.testedAt > 0,
-            )
+            if (busy) {
+                TestingBadge(Modifier.align(Alignment.End))
+            } else {
+                DelayBadge(
+                    delay = delay,
+                    modifier = Modifier.align(Alignment.End),
+                    tested = item.testedAt > 0,
+                )
+            }
         }
     }
 }
@@ -1019,6 +1055,7 @@ private fun NodeDetailSheet(
             DetailRow("名称", item.tag)
             item.source?.let { DetailRow("来源", it) }
             DetailRow("延迟", when {
+                testing -> "测速中…"
                 item.delay >= 65_000 -> "超时"
                 item.delay > 0 -> "${item.delay} ms"
                 item.testedAt > 0 -> "超时"
