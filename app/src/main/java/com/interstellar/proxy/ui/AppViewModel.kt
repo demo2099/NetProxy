@@ -520,10 +520,21 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             override fun updateOutbounds(outbounds: List<io.nekohasekai.libbox.OutboundGroupItem>) {
                 val map = _delays.value.toMutableMap()
                 for (item in outbounds) {
-                    map[item.tag] = item.urlTestDelay
-                    // keep the per-node stamp so a single-node test can tell
-                    // "the kernel finished this node" from "value unchanged"
-                    if (item.urlTestTime > 0) testStamps[item.tag] = item.urlTestTime
+                    val prevStamp = testStamps[item.tag] ?: 0L
+                    val incoming = item.urlTestTime
+                    // ★ 这个回调里混着 selector 的成员快照：它们的
+                    //   urlTestTime / urlTestDelay 永远是 0。无条件写 map 会把
+                    //   「单节点测速刚测出来的延迟」和「批量测速回填的超时」
+                    //   一起冲掉 —— 用户看到的就是「测了另一个，前一个结果
+                    //   就消失」「批量测速还是有未测」。
+                    //   只有内核真的产生了新结果（时间戳前进）才覆盖。
+                    if (incoming > prevStamp) {
+                        map[item.tag] = item.urlTestDelay
+                        testStamps[item.tag] = incoming
+                    } else if (!map.containsKey(item.tag) && item.urlTestDelay > 0) {
+                        // 首次见到且内核已有有效值（连接时自动测过），收下
+                        map[item.tag] = item.urlTestDelay
+                    }
                 }
                 _delays.value = map
                 // url-test progress: count results stamped after this run
@@ -640,7 +651,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (_status.value == Status.Starting) markStarted()
 
         clashApi.proxies()?.let { proxies ->
-            val delays = mutableMapOf<String, Int>()
+            // ★ 合并而不是整体替换：proxies 里只有「有 history」的节点才带
+            //   delay，没测过的节点会整条缺席。直接 `_delays = delays` 会把
+            //   单节点刚测出来的结果一起抹掉。
+            val delays = _delays.value.toMutableMap()
             for ((name, v) in proxies) {
                 val history = v.jsonObject["history"]?.let { h ->
                     (h as? kotlinx.serialization.json.JsonArray)?.lastOrNull()?.jsonObject
@@ -1143,10 +1157,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                                 // 只拿到 0 或根本不在 _delays 里；selector 的 items
                                 // 又不会同步 urlTestTime，导致卡片显示「未测」。
                                 // 把 AUTO 组成员中无有效延迟的 tag 统一标为超时。
+                                // AUTO 组还没推上来时用订阅池兜底，否则整段会被跳过。
                                 val members = _groups.value
                                     .find { it.tag == ConfigBuilder.AUTO_TAG }
                                     ?.items?.map { it.tag }
-                                if (!members.isNullOrEmpty()) {
+                                    ?.takeIf { it.isNotEmpty() }
+                                    ?: ConfigBuilder.tagsFor(
+                                        SubscriptionRepository.poolOf(
+                                            _subscriptions.value,
+                                            _activeSubscriptionId.value,
+                                            _mixEnabled.value,
+                                            _mixSubscriptionIds.value,
+                                        ),
+                                    )
+                                if (members.isNotEmpty()) {
                                     _delays.value = _delays.value.toMutableMap().also { map ->
                                         for (tag in members) {
                                             val v = map[tag]
@@ -1526,6 +1550,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                                 value = TIMEOUT_DELAY
                                 note = "超时：15 秒内没有握手成功"
                             } else if (value <= 0 || value >= TIMEOUT_DELAY) {
+                                // 内核测了但失败（urlTestDelay=0）——写回哨兵值，
+                                // 徽章才会显示「超时」而不是「未测」。
+                                value = TIMEOUT_DELAY
                                 note = "超时：节点没有响应"
                             }
                         }

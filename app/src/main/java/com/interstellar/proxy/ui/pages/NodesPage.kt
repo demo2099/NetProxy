@@ -177,7 +177,15 @@ fun NodesPage(viewModel: AppViewModel) {
                         tag = item.tag,
                         type = item.type,
                         delay = delays[item.tag] ?: item.urlTestDelay,
-                        testedAt = item.urlTestTime,
+                        // ★ selector 的 items 永远 urlTestTime=0（selector 不做
+                        //   url-test），只看它会让「测过但失败」的节点退化成
+                        //   「未测」。_delays 里有这个 tag 就说明测过（值可能
+                        //   是超时哨兵），据此判定 tested。
+                        testedAt = if (delays.containsKey(item.tag)) {
+                            maxOf(item.urlTestTime, 1L)
+                        } else {
+                            item.urlTestTime
+                        },
                         source = sourceByTag[item.tag],
                         node = nodeByTag[item.tag],
                     )
