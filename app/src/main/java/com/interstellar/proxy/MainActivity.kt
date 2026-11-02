@@ -252,15 +252,22 @@ fun AppRoot(
                         // snap settle (iOS-style), gestures owned by the pager itself.
                         // A user swipe writes NO state at all (zero recomposition at
                         // settle); only programmatic jumps go through jumpTo.
+                        // ★ 日志页已经收进「设置 → 系统日志」，主界面不再单独占
+                        //   一个 tab。这里保留 MainTab.Logs 枚举项（ordinal 不变，
+                        //   避免其它引用错位），只把它从 pager/dock 的列表里过滤掉。
                         val tabs = com.interstellar.proxy.ui.pages.MainTab.entries
+                            .filter { it != com.interstellar.proxy.ui.pages.MainTab.Logs }
                         val pagerState = androidx.compose.foundation.pager.rememberPagerState(
-                            initialPage = nav.tab.ordinal,
+                            initialPage = tabs.indexOf(nav.tab).coerceAtLeast(0),
                         ) { tabs.size }
                         val scope = androidx.compose.runtime.rememberCoroutineScope()
                         fun jumpTo(tab: com.interstellar.proxy.ui.pages.MainTab) {
+                            // 用列表下标而不是 ordinal —— 过滤后两者不再相等
+                            val index = tabs.indexOf(tab)
+                            if (index < 0) return
                             if (nav.tab != tab) onNavChange(nav.copy(tab = tab, pages = emptyList()))
                             // direct switch, iOS TabBar style — no carousel ride
-                            scope.launch { pagerState.scrollToPage(tab.ordinal) }
+                            scope.launch { pagerState.scrollToPage(index) }
                         }
                         // system back on a non-home tab returns Home first (derived from the pager)
                         androidx.activity.compose.BackHandler(
@@ -302,7 +309,7 @@ fun AppRoot(
                                     DockItem("首页", Icons.Outlined.Home, Icons.Filled.Home),
                                     DockItem("节点", Icons.Outlined.Hub, Icons.Filled.Hub),
                                     DockItem("订阅", Icons.Outlined.Subscriptions, Icons.Filled.Subscriptions),
-                                    DockItem("日志", Icons.Outlined.Description, Icons.Filled.Description),
+                                    // 「日志」不在这里：入口已收进 设置 → 系统日志
                                     DockItem("设置", Icons.Outlined.Settings, Icons.Filled.Settings),
                                 ),
                                 selected = pagerState.currentPage,
