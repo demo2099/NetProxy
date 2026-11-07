@@ -155,7 +155,15 @@ object DefaultNetworkListener {
             in 28 until 31 ->
                 @TargetApi(28)
                 {
-                    InterstellarApplication.connectivity.requestNetwork(request, Callback, mainHandler)
+                    // requestNetwork 在 API 28~30 上要求 CHANGE_NETWORK_STATE；
+                    // 权限缺失/被 ROM 回收时抛 SecurityException —— 那是未捕获异常，
+                    // 会把整个进程打死（Android 9 点「连接」必崩，日志见 AppLog [crash]）。
+                    // 这里兜一层：拿不到就退回 registerDefaultNetworkCallback。
+                    try {
+                        InterstellarApplication.connectivity.requestNetwork(request, Callback, mainHandler)
+                    } catch (e: SecurityException) {
+                        InterstellarApplication.connectivity.registerDefaultNetworkCallback(Callback, mainHandler)
+                    }
                 }
 
             in 26 until 28 ->
