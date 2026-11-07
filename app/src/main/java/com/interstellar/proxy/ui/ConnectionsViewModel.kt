@@ -8,6 +8,7 @@ import com.interstellar.proxy.core.CoreKind
 import com.interstellar.proxy.data.Settings
 import com.interstellar.proxy.utils.CommandClient
 import com.interstellar.proxy.utils.CommandTarget
+import com.interstellar.proxy.utils.Rfc3339
 import io.nekohasekai.libbox.ConnectionEvents
 import io.nekohasekai.libbox.Libbox
 import kotlinx.coroutines.Dispatchers
@@ -181,9 +182,7 @@ class ConnectionsViewModel(application: Application) : AndroidViewModel(applicat
         _connected.value = true
     }
 
-    private fun parseClashTime(value: String?): Long? = runCatching {
-        java.time.OffsetDateTime.parse(value).toInstant().toEpochMilli()
-    }.getOrNull()
+    private fun parseClashTime(value: String?): Long? = Rfc3339.parseToEpochMillis(value)
 
     fun closeConnection(id: String) {
         when (Settings.coreKind) {
